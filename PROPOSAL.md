@@ -3,6 +3,8 @@
 A marketplace where you choose who you trade with — filtered by the things you
 already have in common.
 
+**Team:** Brian (Dongwoo), Jaewon (Jae), Vinayak, Kobe
+
 ## The Problem
 
 Columbia students buy and sell constantly: furniture at move-out, appliances,
