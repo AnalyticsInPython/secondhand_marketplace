@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Set up your profile &middot; MarketPlace{% endblock %}
+
+{#
+  Display name only, on purpose.
+
+  The three self-declared attributes -- location, nationality, industry -- are
+  deferred until the team agrees on their option sets. The `users` columns are
+  already there; adding the fields back is a change to this file plus the
+  UPDATE in auth.onboarding, nothing else.
+#}
+
+{% block content %}
+<div class="card">
+  <p class="eyebrow">One last step</p>
+  <h1>What should we call you?</h1>
+  <p class="lede">
+    Your school is already confirmed. Pick the name other Columbia members will
+    see on your listings.
+  </p>
+
+  <form method="post" novalidate>
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+
+    <label class="field">
+      <span class="field-label">Display name</span>
+      <input type="text" name="display_name" value="{{ values.display_name or '' }}"
+             placeholder="How you appear on listings" autofocus required>
+    </label>
+
+    <div class="field field-static">
+      <span class="field-label">School <span class="verified">verified</span></span>
+      <p class="static-value">{{ user.school or 'Columbia University' }}</p>
+      <p class="field-hint">Confirmed by your {{ user.email }} address.</p>
+    </div>
+
+    <button type="submit" class="btn">Enter MarketPlace</button>
+  </form>
+
+  <p class="fine">
+    Location, nationality and industry come later &mdash; they are what the
+    listing filters run on, and we are still settling the option lists.
+  </p>
+</div>
+{% endblock %}

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Sign in &middot; MarketPlace{% endblock %}
+
+{% block content %}
+<div class="card">
+  <h1>Buy and sell within Columbia.</h1>
+  <p class="lede">
+    MarketPlace is open to the Columbia community only. Enter your university
+    email to get started.
+  </p>
+
+  <form method="post" novalidate autocomplete="on">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+    <label class="field">
+      <span class="field-label">Columbia email</span>
+      <input
+        type="email"
+        name="email"
+        value="{{ email }}"
+        placeholder="uni1234@columbia.edu"
+        autocomplete="email"
+        autofocus
+        required>
+    </label>
+    <button type="submit" class="btn">Continue</button>
+  </form>
+
+  <p class="fine">
+    We will email you either an invitation or a sign-in code, depending on
+    whether you already have an account.
+  </p>
+</div>
+{% endblock %}

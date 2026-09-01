@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Check your email &middot; MarketPlace{% endblock %}
+
+{% block content %}
+<div class="card">
+  <p class="eyebrow">New here</p>
+  <h1>Check your email.</h1>
+  <p class="lede">
+    We sent an invitation to <strong>{{ email }}</strong>. Open it and follow the
+    link to finish setting up your account.
+  </p>
+  <p class="fine">
+    The link works once and expires in {{ ttl_days }} days. Nothing in your
+    inbox? Check spam, or
+    <a href="{{ url_for('auth.gate') }}">try a different address</a>.
+  </p>
+</div>
+{% endblock %}

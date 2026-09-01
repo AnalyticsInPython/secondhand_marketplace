@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Home &middot; MarketPlace{% endblock %}
+{% block body_class %}app{% endblock %}
+
+{#
+  ============================================================================
+  THE BLANK PAGE. Everything past the gate gets built here.
+
+  Next up, in the order the proposal lists them:
+    1. Filtered browse   -- four toggles, live listing count
+    2. Two-tier feed     -- internal (badged) above external (labelled, links out)
+    3. Listing detail
+    4. Post a listing    -- with audience selection + reach count
+  ============================================================================
+#}
+
+{% block brand %}
+<header class="topbar">
+  <a class="brand" href="{{ url_for('home') }}">
+    <span class="brand-mark"></span>
+    <span class="brand-name">MarketPlace</span>
+  </a>
+  <div class="topbar-right">
+    <span class="who">{{ current_user.display_name or current_user.email }}</span>
+    <form method="post" action="{{ url_for('auth.logout') }}">
+      <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+      <button type="submit" class="btn-link">Sign out</button>
+    </form>
+  </div>
+</header>
+{% endblock %}
+
+{% block content %}
+<div class="canvas">
+  <p class="eyebrow">Signed in</p>
+  <h1>You're in, {{ current_user.display_name or 'neighbour' }}.</h1>
+  <p class="lede">
+    This page is intentionally empty. It is the canvas the rest of MarketPlace
+    gets built on.
+  </p>
+
+  <dl class="attrs">
+    <div><dt>Signed in as</dt><dd>{{ current_user.email }}</dd></div>
+    <div><dt>School</dt><dd>{{ current_user.school or '—' }}</dd></div>
+  </dl>
+
+  <p class="fine">
+    Location, nationality and industry are not collected yet. Once their option
+    sets are agreed they join this profile and become the browse filters.
+  </p>
+
+  <div class="placeholder">
+    <p>Filtered browse, the two-tier feed, and posting land here.</p>
+  </div>
+</div>
+{% endblock %}

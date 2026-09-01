@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Enter your code &middot; MarketPlace{% endblock %}
+
+{% block content %}
+<div class="card">
+  <p class="eyebrow">Welcome back</p>
+  <h1>Enter your code.</h1>
+  <p class="lede">
+    We sent a {{ length }}-digit code to <strong>{{ email }}</strong>.
+  </p>
+
+  <form method="post" novalidate>
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+    <label class="field">
+      <span class="field-label">Sign-in code</span>
+      <input
+        type="text"
+        name="code"
+        class="code-input"
+        inputmode="numeric"
+        pattern="[0-9]*"
+        maxlength="{{ length }}"
+        autocomplete="one-time-code"
+        autofocus
+        required>
+    </label>
+    <button type="submit" class="btn">Verify</button>
+  </form>
+
+  <form method="post" action="{{ url_for('auth.resend') }}" class="inline-form">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+    <button type="submit" class="btn-link">Send a new code</button>
+  </form>
+
+  <p class="fine">
+    Wrong address? <a href="{{ url_for('auth.gate') }}">Start over</a>.
+  </p>
+</div>
+{% endblock %}
