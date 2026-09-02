@@ -1,15 +1,43 @@
 # LionsList
 
 A used-goods marketplace for verified Columbia students only. You sign in with
-your `columbia.edu` address, you see what other students are selling, and you
-filter the feed by what you have in common with them — same college, same
-country, same neighborhood, same year.
+your Columbia address, you see what other students are selling, and you filter
+the feed by what you have in common with them — same college, same country,
+same neighborhood, same year.
 
 **Team:** Brian (Dongwoo), Jaewon (Jae), Vinayak, Kobe
 
-`LionsListBuildSpec.pdf` (v2.0) is the source of truth for what gets built.
-[PROPOSAL.md](PROPOSAL.md) is the original course proposal and is now history —
-where the two disagree, the spec wins.
+## Who can sign in
+
+Four domains, agreed by the team:
+
+| Domain | Prefills the college dropdown |
+|---|---|
+| `columbia.edu` | no — every school issues these |
+| `gsb.columbia.edu` | Columbia Business School |
+| `cumc.columbia.edu` | no — covers VP&S, Mailman, Nursing and Dental alike |
+| `tc.columbia.edu` | Teachers College |
+
+The list lives in `ALLOWED_EMAIL_DOMAINS`, not in code, so a fifth school is an
+environment change and a redeploy.
+
+> **Note:** `docs/UX_SPEC.md` §6.1 still specifies a regex admitting
+> `@columbia.edu` alone. That document predates this decision and needs the
+> same edit.
+
+## Which spec governs
+
+**Unresolved.** Two build specs sit on `main` and they disagree on most of the
+data model — external tier, badge experiment, and nearly every enum:
+
+- `LionsListBuildSpec.pdf` (v2.0) — what the code in `api/` currently follows
+- `docs/UX_SPEC.md` — newer, merged via PR, and what the root README on `main`
+  points at
+
+The team needs to pick one. Until then, treat `api/app/enums.py` as provisional.
+
+[PROPOSAL.md](PROPOSAL.md) is the original course proposal. Both specs have
+moved past it; where any of them disagree, the proposal loses.
 
 ## Layout
 
