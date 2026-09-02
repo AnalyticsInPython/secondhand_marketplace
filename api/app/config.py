@@ -16,8 +16,12 @@ class Settings(BaseSettings):
     )
 
     # --- Which addresses may create an account -----------------------------
-    # columbia.edu and gsb.columbia.edu at launch, per spec step 03.
-    allowed_email_domains: str = "columbia.edu,gsb.columbia.edu"
+    # Agreed by the team: the university address plus Business, the Medical
+    # Center and Teachers College. Note this supersedes the regex in
+    # docs/UX_SPEC.md §6.1, which admits @columbia.edu only.
+    allowed_email_domains: str = (
+        "columbia.edu,gsb.columbia.edu,cumc.columbia.edu,tc.columbia.edu"
+    )
 
     # --- Supabase ----------------------------------------------------------
     supabase_url: str = ""

@@ -9,16 +9,34 @@ import pytest
 from app.domains import college_from_email, domain_of, normalize, rejection_reason
 from app.enums import College
 
-LAUNCH_DOMAINS = {"columbia.edu", "gsb.columbia.edu"}
+LAUNCH_DOMAINS = {
+    "columbia.edu",
+    "gsb.columbia.edu",
+    "cumc.columbia.edu",
+    "tc.columbia.edu",
+}
 
 
 @pytest.mark.parametrize("email", [
     "uni1234@columbia.edu",
     "UNI1234@Columbia.EDU",
     "  student@gsb.columbia.edu  ",
+    "resident@cumc.columbia.edu",
+    "student@tc.columbia.edu",
 ])
 def test_columbia_addresses_are_accepted(email):
     assert rejection_reason(normalize(email), LAUNCH_DOMAINS) is None
+
+
+def test_the_agreed_allowlist_is_the_default():
+    """The four domains the team settled on, and nothing else.
+
+    _env_file=None so a teammate's local .env cannot fail this -- the point is
+    what someone gets with no configuration at all.
+    """
+    from app.config import Settings
+
+    assert Settings(_env_file=None).domains == LAUNCH_DOMAINS
 
 
 @pytest.mark.parametrize("email", [
@@ -32,10 +50,10 @@ def test_outside_addresses_are_rejected(email):
     assert "Columbia students only" in reason
 
 
-def test_rejection_names_the_domains_that_would_work():
+def test_rejection_names_every_domain_that_would_work():
     reason = rejection_reason("someone@gmail.com", LAUNCH_DOMAINS)
-    assert "@columbia.edu" in reason
-    assert "@gsb.columbia.edu" in reason
+    for domain in LAUNCH_DOMAINS:
+        assert "@" + domain in reason
 
 
 @pytest.mark.parametrize("email,expected", [
@@ -47,18 +65,27 @@ def test_malformed_input_gets_its_own_message(email, expected):
     assert rejection_reason(normalize(email), LAUNCH_DOMAINS) == expected
 
 
-def test_domains_not_yet_open_are_refused():
-    """cumc and tc are in the spec's vocabulary but not the launch allowlist."""
-    assert rejection_reason("someone@tc.columbia.edu", LAUNCH_DOMAINS) is not None
+def test_other_columbia_subdomains_are_still_refused():
+    """barnard and law are Columbia-adjacent but not on the agreed list."""
+    for email in ("someone@barnard.edu", "someone@law.columbia.edu"):
+        assert rejection_reason(email, LAUNCH_DOMAINS) is not None
 
 
-def test_subdomain_prefills_the_college_dropdown():
-    assert college_from_email("student@gsb.columbia.edu") is College.CBS
+@pytest.mark.parametrize("email,expected", [
+    ("student@gsb.columbia.edu", College.CBS),
+    ("student@tc.columbia.edu", College.TC),
+])
+def test_unambiguous_subdomains_prefill_the_college_dropdown(email, expected):
+    assert college_from_email(email) is expected
 
 
-def test_plain_columbia_address_prefills_nothing():
-    """@columbia.edu says nothing about which school, so the student picks."""
-    assert college_from_email("uni1234@columbia.edu") is None
+@pytest.mark.parametrize("email", [
+    "uni1234@columbia.edu",      # every school issues these
+    "resident@cumc.columbia.edu",  # VP&S, Mailman, Nursing and Dental alike
+])
+def test_ambiguous_domains_prefill_nothing(email):
+    """These say nothing about which school, so the member picks."""
+    assert college_from_email(email) is None
 
 
 def test_domain_of():

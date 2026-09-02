@@ -87,6 +87,13 @@ class EventType(str, enum.Enum):
 
 # Which college an email subdomain proves. Used to prefill the dropdown at
 # onboarding, where it is unambiguous; the student can still change it.
+#
+# Two of the four allowed domains prove nothing on their own and are absent
+# here on purpose:
+#   columbia.edu       every school issues these
+#   cumc.columbia.edu  covers VP&S, Mailman, Nursing and Dental alike
+# Those members pick their school themselves.
 SUBDOMAIN_TO_COLLEGE = {
     "gsb.columbia.edu": College.CBS,
+    "tc.columbia.edu": College.TC,
 }
