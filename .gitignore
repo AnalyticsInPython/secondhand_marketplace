@@ -1,9 +1,21 @@
-# Generated placeholder images — rebuild with scripts/make_photos.py
-photos/
-web/public/photos/
-
 # Python
 __pycache__/
-*.pyc
+*.py[cod]
 .venv/
 venv/
+*.db
+*.sqlite3
+.env
+
+# Node
+node_modules/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+.env.local
+
+# Editors / OS
+.DS_Store
+.vscode/
+.idea/
