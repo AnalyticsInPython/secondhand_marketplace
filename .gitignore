@@ -1,0 +1,9 @@
+# Generated placeholder images — rebuild with scripts/make_photos.py
+photos/
+web/public/photos/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
