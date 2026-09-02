@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { Logo } from "@/components/Logo";
 import { Button, Field, Input, MailIcon, PinIcon, Segmented, ShieldIcon } from "@/components/ui";
 import { api } from "@/lib/api";
+import { EMAIL_DOMAIN_LIST, EMAIL_REJECTION, isColumbiaEmail } from "@/lib/domains";
 import type { Grade, ZipResult } from "@/lib/types";
 
 /**
@@ -29,7 +30,7 @@ export default function SignUpPage() {
   const [sent, setSent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const emailValid = /^[^@]+@columbia\.edu$/i.test(email);
+  const emailValid = isColumbiaEmail(email);
 
   // Live availability, as the design shows — states A4–A6.
   useEffect(() => {
@@ -129,8 +130,8 @@ export default function SignUpPage() {
 
           <Field
             label="Columbia email"
-            hint="Only @columbia.edu addresses can register. We send a verification link — no password to remember."
-            error={email && !emailValid ? "Only @columbia.edu addresses can register." : undefined}
+            hint={`Any of ${EMAIL_DOMAIN_LIST} can register. We send a verification link — no password to remember.`}
+            error={email && !emailValid ? EMAIL_REJECTION : undefined}
           >
             <Input
               value={email}

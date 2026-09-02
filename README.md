@@ -1,6 +1,7 @@
 # Columbia Market
 
-A secondhand marketplace for verified `@columbia.edu` members. Karrot (당근마켓)'s
+A secondhand marketplace for verified Columbia members — `columbia.edu`,
+`gsb.columbia.edu`, `cumc.columbia.edu` and `tc.columbia.edu`. Karrot (당근마켓)'s
 proximity feed, but the trust signal is ZIP-code distance plus three affiliation
 attributes instead of GPS.
 

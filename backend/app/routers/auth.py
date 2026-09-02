@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session as DbSession
 
+from .. import emails
 from ..config import settings
 from ..db import get_db
 from ..models import User
@@ -88,10 +89,10 @@ def signup(payload: SignupIn, db: DbSession = Depends(get_db)):
 @router.post("/request-link", response_model=LinkSentOut, status_code=status.HTTP_202_ACCEPTED)
 def request_link(payload: RequestLinkIn, db: DbSession = Depends(get_db)):
     email = payload.email.lower()
-    if not email.endswith(f"@{settings.allowed_email_domain}"):
+    if not emails.is_allowed(email):
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
-            f"Columbia Market is @{settings.allowed_email_domain} only.",
+            emails.rejection_message(),
         )
 
     user = db.query(User).filter(User.email == email).first()

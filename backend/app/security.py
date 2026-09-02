@@ -1,7 +1,8 @@
 """Sessions and magic links — UX_SPEC.md §6.2.
 
 There is no password anywhere in this product. A sign-in is: prove you can open
-an @columbia.edu inbox, once, within fifteen minutes.
+an inbox on one of the Columbia domains in `app/emails.py`, once, within fifteen
+minutes.
 
 Tokens and session ids are opaque random strings stored in the database rather
 than signed blobs, because both need to be *revocable*: a link must stop working
