@@ -18,6 +18,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
+from . import emails
 from .config import settings
 from .enums import Category, Condition, Grade, ListingStatus, School, Source, SortOrder
 
@@ -39,9 +40,8 @@ class SignupIn(BaseModel):
     @field_validator("email")
     @classmethod
     def columbia_only(cls, v: str) -> str:
-        domain = v.split("@")[-1].lower()
-        if domain != settings.allowed_email_domain:
-            raise ValueError(f"Only @{settings.allowed_email_domain} addresses can register")
+        if not emails.is_allowed(v):
+            raise ValueError(emails.rejection_message())
         return v.lower()
 
     @field_validator("username")

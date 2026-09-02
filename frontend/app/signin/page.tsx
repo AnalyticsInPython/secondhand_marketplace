@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { Logo } from "@/components/Logo";
 import { Button, Card, Field, Input, MailIcon, ShieldIcon } from "@/components/ui";
 import { api } from "@/lib/api";
+import { EMAIL_REJECTION, isColumbiaEmail } from "@/lib/domains";
 
 /**
  * Sign in — UX_SPEC.md §6.2. There is no password anywhere in this product.
@@ -18,7 +19,7 @@ export default function SignInPage() {
   const [wait, setWait] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
-  const valid = /^[^@]+@columbia\.edu$/i.test(email);
+  const valid = isColumbiaEmail(email);
 
   // Resend stays locked for a minute — long enough for the first mail to
   // arrive, short enough that a stuck user is not stranded.
@@ -58,7 +59,7 @@ export default function SignInPage() {
 
           <Field
             label="Columbia email"
-            error={email && !valid ? "Columbia Market is @columbia.edu only." : undefined}
+            error={email && !valid ? EMAIL_REJECTION : undefined}
           >
             <Input
               value={email}

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
+from ..config import settings
 from ..enums import (
     CATEGORY_LABELS,
     CONDITION_LABELS,
@@ -60,4 +61,7 @@ def enums():
         "sources": [{"value": s.value, "label": s.label()} for s in Source],
         # The presets under the distance slider. Continuous in between.
         "radius_steps_mi": [0.5, 1, 2.5, 5, 10],
+        # Who may register, so the sign-up and sign-in screens validate
+        # against exactly what the API enforces. See app/emails.py.
+        "email_domains": list(settings.allowed_domains_ordered),
     }

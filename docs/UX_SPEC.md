@@ -15,7 +15,7 @@
 ## 1. What we are building
 
 A secondhand marketplace restricted to Columbia students, verified by
-`@columbia.edu` email. The structural model is Karrot (당근마켓): a local feed
+a Columbia email address (§4.1). The structural model is Karrot (당근마켓): a local feed
 sorted by proximity, with a strong trust signal attached to every seller. Karrot
 uses GPS-verified neighbourhoods; we use **ZIP code + distance in miles**, plus
 three affiliation attributes.
@@ -144,7 +144,7 @@ but keep the enum *values* exactly as written — the UI copy depends on them.
 | Field | Type | Notes |
 |---|---|---|
 | `id` | uuid PK | |
-| `email` | text, unique, NOT NULL | Must match `^[a-z0-9._%+-]+@columbia\.edu$`, case-insensitive. **Immutable.** It is the identity. |
+| `email` | text, unique, NOT NULL | Domain must be one of `columbia.edu`, `gsb.columbia.edu`, `cumc.columbia.edu`, `tc.columbia.edu`, case-insensitive. Matched on the **whole** domain, never a suffix. The list is config (`ALLOWED_EMAIL_DOMAINS`), enforced in `backend/app/emails.py`, and published at `/reference/enums`. **Immutable.** It is the identity. |
 | `username` | text, unique, NOT NULL | 3–20 chars, `[a-zA-Z0-9._]`. Displayed with a leading `@`. The only name buyers see. |
 | `display_name` | text, nullable | Optional real name shown on the profile page |
 | `phone` | text, **nullable** | E.164 preferred. **Optional at sign-up.** See §5.1. |
@@ -335,7 +335,7 @@ form card right. Mobile is one scroll with a sticky CTA.
 
 | Field | Required | Rules |
 |---|---|---|
-| Columbia email | ✅ | Must end `@columbia.edu`. Validated as you type, not on submit. |
+| Columbia email | ✅ | Domain must be on the allowlist (§4.1). Validated as you type, not on submit. |
 | Username | ✅ | Uniqueness checked live: checking → taken (with 3 suggestions) → available |
 | Phone number | ❌ **optional** | Tagged `OPTIONAL`. Hint: "Only if you want buyers to text you. Email always works." |
 | Nationality | ✅ | Searchable dropdown, 195 entries, 4 most common at Columbia pinned to the top |
@@ -354,8 +354,8 @@ dropdown is the only ZIP affordance.
 ![Sign in desktop](screens/02-signin-desktop.png)
 ![Sign in mobile](screens/02-signin-mobile.png)
 
-**There is no password anywhere in this product.** Enter a `@columbia.edu`
-address, receive a one-time link, open it, you are in.
+**There is no password anywhere in this product.** Enter a Columbia address on
+the allowlist (§4.1), receive a one-time link, open it, you are in.
 
 - Link is **single-use** and **expires after 15 minutes**.
 - Resend is locked for **60 seconds** with a visible countdown.

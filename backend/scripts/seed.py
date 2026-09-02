@@ -60,6 +60,20 @@ SCHOOLS = (
 
 GRADES = [Grade.GRADUATE] * 60 + [Grade.UNDERGRADUATE] * 35 + [Grade.FACULTY_STAFF] * 5
 
+# Schools that issue their own address. Everyone else is on plain columbia.edu.
+# Seeding all four domains means the multi-domain sign-in path is exercised by
+# the data, not only by a hand-typed test.
+SCHOOL_EMAIL_DOMAIN = {
+    School.CBS: "gsb.columbia.edu",
+    School.TEACHERS_COLLEGE: "tc.columbia.edu",
+    School.PUBLIC_HEALTH: "cumc.columbia.edu",
+    School.VPS: "cumc.columbia.edu",
+}
+
+
+def email_domain_for(school: School) -> str:
+    return SCHOOL_EMAIL_DOMAIN.get(school, "columbia.edu")
+
 ZIP_WEIGHTS = {"10027": 40, "10025": 15, "10031": 10, "10026": 8, "10024": 7, "10032": 5}
 ZIPS_POOL = [z for zc, w in ZIP_WEIGHTS.items() for z in [zc] * w] + [
     z.zip_code for z in ZIPS if z.zip_code not in ZIP_WEIGHTS
@@ -198,15 +212,16 @@ def seed(n_users: int, n_listings: int, do_reset: bool) -> None:
     for i in range(n_users):
         username = f"cu_{i:04d}"
         has_phone = rng.random() > 0.30  # ~30% leave it blank, on purpose
+        school = rng.choice(SCHOOLS)
         users.append(
             User(
-                email=f"{username}@columbia.edu",
+                email=f"{username}@{email_domain_for(school)}",
                 username=username,
                 display_name=None,
                 phone=f"+1646555{rng.randint(1000, 9999)}" if has_phone else None,
                 phone_contact_enabled=has_phone and rng.random() > 0.1,
                 nationality=rng.choice(NATIONALITIES),
-                school=rng.choice(SCHOOLS),
+                school=school,
                 grade=rng.choice(GRADES),
                 zip_code=rng.choice(ZIPS_POOL),
                 is_verified=True,

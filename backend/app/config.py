@@ -13,7 +13,12 @@ class Settings(BaseSettings):
     # Dev convenience: return the magic link in the response instead of emailing.
     email_dev_mode: bool = True
 
-    allowed_email_domain: str = "columbia.edu"
+    # Agreed by the team: the general university address plus Business, the
+    # Medical Center and Teachers College. Comma-separated, so opening a fifth
+    # school is an environment change and a redeploy, never a code edit.
+    allowed_email_domains: str = (
+        "columbia.edu,gsb.columbia.edu,cumc.columbia.edu,tc.columbia.edu"
+    )
 
     # UX_SPEC.md §6.2
     login_token_ttl_minutes: int = 15
@@ -28,6 +33,19 @@ class Settings(BaseSettings):
     # UX_SPEC.md §4.3
     max_photos_per_listing: int = 10
     max_photo_bytes: int = 10 * 1024 * 1024
+
+    @property
+    def allowed_domains_ordered(self) -> tuple[str, ...]:
+        """Declaration order, so every message lists them the same way."""
+        return tuple(
+            d.strip().lower()
+            for d in self.allowed_email_domains.split(",")
+            if d.strip()
+        )
+
+    @property
+    def allowed_domains(self) -> frozenset[str]:
+        return frozenset(self.allowed_domains_ordered)
 
 
 settings = Settings()
