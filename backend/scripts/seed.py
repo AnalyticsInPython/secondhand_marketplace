@@ -244,6 +244,48 @@ def load(do_reset: bool, batch: int = 2000) -> None:
         db.close()
 
 
+def warn_about_photos() -> None:
+    """Say so, loudly, when the photo files the rows point at are not on disk.
+
+    The ~5,800 images are gitignored — they are 200MB and reproducible — so a
+    teammate who clones and seeds gets listings whose `url` points at files they
+    do not have. The frontend degrades to its gradient placeholder rather than
+    breaking, which is worse than an error in one specific way: nothing tells
+    you anything is missing. Hence this.
+    """
+    photos_csv = os.path.join(DATA_DIR, "listing_photos.csv")
+    if not os.path.exists(photos_csv):
+        return
+    with open(photos_csv, newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    if not rows:
+        return
+
+    out_dir = os.path.join(REPO_ROOT, "frontend", "public", "photos")
+    # Sample rather than stat 5,800 files.
+    sample = rows[:: max(len(rows) // 40, 1)][:40]
+    present = sum(
+        1 for r in sample
+        if os.path.exists(os.path.join(out_dir, r["url"].lstrip("/").split("/", 1)[1]))
+    )
+    if present >= len(sample):
+        return
+
+    share = "none" if present == 0 else "only about %d%%" % round(100 * present / len(sample))
+    print("\n" + "!" * 74)
+    print("  PHOTOS ARE MISSING — %s of the %d listing photos are on disk."
+          % (share, len(rows)))
+    print()
+    print("  The images are not committed: 200MB, and reproducible from the CSV.")
+    print("  The app will still run, showing a gradient placeholder on every card,")
+    print("  so this will NOT look like an error. Run this once:")
+    print()
+    print("      python3 scripts/fetch_photos.py")
+    print()
+    print("  ~2 minutes, no API key needed. See docs/mock_data_spec.md.")
+    print("!" * 74)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -262,6 +304,7 @@ def main() -> None:
 
     print("\nLoading %s" % DATA_DIR)
     load(args.reset)
+    warn_about_photos()
     print("\nDone. The reference member is @brian_dw — sign in as their address "
           "to see the screens the way the Figma draws them.")
 

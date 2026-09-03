@@ -15,7 +15,7 @@ ENGI 4503 · Analytics in Python — Brian (Dongwoo), Jaewon (Jae), Vinayak, Kob
 | [PROPOSAL.md](PROPOSAL.md) | The research proposal — the problem, the questions the data should answer. The design has moved past it in three places; §2 of the UX spec lists them. |
 | [docs/screens/](docs/screens/) | 19 exported PNGs — six screens × desktop/mobile, the user-flow map, the design foundations, and the interaction states. |
 | **[docs/mock_data_spec.md](docs/mock_data_spec.md)** | **The seed data.** Column-by-column reference, how to load it, the constraints your schema should enforce, and the logic the API must compute rather than read. Read this before writing the backend. |
-| [data/](data/) | The generated corpus — 1,000 members, 1,500 listings, photos and the four event tables. Regenerate with `python3 -m seed.generate`. |
+| [data/](data/) | The generated corpus — 1,000 members, 1,500 listings, photos and the four event tables. Regenerate with `python3 -m seed.generate`. **The photo files are gitignored — run `python3 scripts/fetch_photos.py` once after cloning.** |
 | [backend/README.md](backend/README.md) | Running the API, the analysis, and the three things that are easy to break. |
 | [frontend/README.md](frontend/README.md) | Running the app and the conventions the components follow. |
 
@@ -29,8 +29,13 @@ connection, so the exports and the spec are written to stand on their own.
 cd backend
 python3 -m venv .venv && source .venv/bin/activate    # Python 3.12 or 3.13
 pip install -r requirements.txt && cp .env.example .env
-python -m scripts.seed --users 1000 --listings 1500 --reset
+python -m scripts.seed --reset
 uvicorn app.main:app --reload
+
+# Listing photos — run once. They are not committed (200MB, and reproducible),
+# so without this every card falls back to a gradient placeholder and nothing
+# tells you why. No API key needed; takes about two minutes.
+cd .. && python3 scripts/fetch_photos.py
 
 # App — http://localhost:3000
 cd frontend && npm install && npm run dev
