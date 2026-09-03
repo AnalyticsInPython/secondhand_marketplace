@@ -6,6 +6,7 @@
  */
 
 import type {
+  EnquiryRow,
   FacetCounts,
   FeedFilters,
   ListingDetail,
@@ -25,6 +26,34 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Turn a FastAPI error body into something a person can read.
+ *
+ * FastAPI sends two different shapes under `detail`, and only one is a string.
+ * A raised HTTPException gives `detail: "That username is taken"`, but a
+ * Pydantic validation failure gives an *array* of objects:
+ *
+ *     [{ type: "value_error", loc: ["body","email"], msg: "Value error, ..." }]
+ *
+ * Passing that array straight to `new Error()` stringifies it to
+ * "[object Object]", so the sign-up form showed exactly that instead of the
+ * message naming the four admitted Columbia domains. Same family of bug as the
+ * sign-in one: a failure path that renders nothing useful.
+ */
+function errorMessage(body: unknown, fallback: string): string {
+  const detail = (body as { detail?: unknown })?.detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((d) => (typeof d === "string" ? d : (d as { msg?: string })?.msg))
+      .filter(Boolean)
+      // Pydantic prefixes its own "Value error, "; the rest is our copy.
+      .map((m) => String(m).replace(/^Value error,\s*/, ""));
+    if (messages.length) return messages.join(" ");
+  }
+  return fallback;
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     credentials: "include",
@@ -34,7 +63,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, body.detail ?? res.statusText);
+    throw new ApiError(res.status, errorMessage(body, res.statusText));
   }
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
 }
@@ -78,6 +107,11 @@ export const api = {
   me: () => request<Me>("/me"),
   updateMe: (body: Partial<Me>) =>
     request<Me>("/me", { method: "PATCH", body: JSON.stringify(body) }),
+
+  // ---- the avatar menu's three collections
+  myListings: (offset = 0) => request<ListingPage>(`/me/listings?offset=${offset}`),
+  mySaves: (offset = 0) => request<ListingPage>(`/me/saves?offset=${offset}`),
+  myEnquiries: () => request<EnquiryRow[]>("/me/enquiries"),
 
   // ---- listings
   listings: (filters: FeedFilters) => request<ListingPage>(`/listings${qs(filters)}`),

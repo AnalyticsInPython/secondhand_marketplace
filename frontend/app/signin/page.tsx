@@ -15,6 +15,7 @@ import { EMAIL_REJECTION, isColumbiaEmail } from "@/lib/domains";
 export default function SignInPage() {
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
+  const [alreadyPending, setAlreadyPending] = useState(false);
   const [devLink, setDevLink] = useState<string | null>(null);
   const [wait, setWait] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -33,8 +34,16 @@ export default function SignInPage() {
     setError(null);
     try {
       const res = await api.requestLink(email);
-      setSent(res.sent);
-      setDevLink(res.dev_link);
+      // `sent: false` is NOT a failure. It means a link was issued moments ago
+      // and the 60-second resend lock (§6.2, state B6) has not expired — the
+      // outstanding link is still valid. Treating it as failure left the button
+      // looking dead: you clicked, nothing rendered, and the only way to tell a
+      // link had been sent was to read the network tab.
+      setSent(true);
+      setAlreadyPending(!res.sent);
+      // Keep any link we already have: a locked resend returns none, but the
+      // one from a moment ago still works.
+      if (res.dev_link) setDevLink(res.dev_link);
       setWait(res.resend_available_in_seconds);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
@@ -74,9 +83,13 @@ export default function SignInPage() {
 
           {sent ? (
             <div className="flex flex-col gap-3 rounded-[12px] border border-light bg-tint p-5">
-              <p className="text-[16px] font-bold text-deep">Check your Columbia inbox</p>
+              <p className="text-[16px] font-bold text-deep">
+                {alreadyPending ? "A link is already on its way" : "Check your Columbia inbox"}
+              </p>
               <p className="text-[12.5px] leading-[19px] text-ink2">
-                The link works once and expires in 15 minutes.
+                {alreadyPending
+                  ? "We sent one moments ago — use that one. It works once and expires in 15 minutes."
+                  : "The link works once and expires in 15 minutes."}
               </p>
               {devLink && (
                 <a href={devLink} className="break-all text-[12px] font-semibold text-deep">

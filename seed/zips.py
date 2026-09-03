@@ -24,72 +24,60 @@ gazetteer values before this table is used for anything real.
 
 from __future__ import annotations
 
+import importlib.util
 import math
+import os
+import sys
 
-# 116th & Broadway -- the reference point for the §4.6 "miles from campus" column.
-CAMPUS_LAT = 40.8075
-CAMPUS_LON = -73.9626
+# The ZIP table lives in the backend, at backend/app/services/geo.py, and is
+# loaded from there rather than duplicated here.
+#
+# It used to be duplicated, and the two copies drifted: the backend knew 18 ZIPs
+# and this file knew 47, so 26% of generated listings sat in ZIPs the API
+# rejected — and because `geo.zips_within()` resolves the radius filter to a ZIP
+# list, those listings were invisible to every distance query rather than failing
+# loudly. One table, one place.
+#
+# Loaded by path rather than imported as a package: `backend/` is a separate
+# deployable with its own dependencies, and this keeps the generator from
+# depending on anything installed over there. geo.py imports only `dataclasses`
+# and `math`, so this stays cheap.
 
-EARTH_RADIUS_MI = 3958.7613
+_GEO_PATH = os.path.normpath(
+    os.path.join(os.path.dirname(__file__), os.pardir,
+                 "backend", "app", "services", "geo.py")
+)
 
 
-# (zip, neighbourhood, borough, lat, lon)
-# Neighbourhood names for the eight ZIPs in §4.6 are the spec's own wording.
-_ZIP_ROWS: tuple[tuple[str, str, str, float, float], ...] = (
-    # ---- Manhattan, uptown (the pilot's centre of gravity) ----
-    ("10027", "Morningside Heights", "Manhattan", 40.8117, -73.9532),
-    ("10025", "Upper West Side", "Manhattan", 40.7986, -73.9680),
-    ("10026", "South Harlem", "Manhattan", 40.8026, -73.9526),
-    ("10031", "Hamilton Heights", "Manhattan", 40.8253, -73.9500),
-    ("10030", "Central Harlem", "Manhattan", 40.8181, -73.9426),
-    ("10037", "Harlem River", "Manhattan", 40.8129, -73.9370),
-    ("10039", "Harlem", "Manhattan", 40.8264, -73.9365),
-    ("10032", "Washington Heights", "Manhattan", 40.8386, -73.9424),
-    ("10033", "Washington Heights North", "Manhattan", 40.8501, -73.9340),
-    ("10040", "Fort George", "Manhattan", 40.8582, -73.9294),
-    ("10034", "Inwood", "Manhattan", 40.8677, -73.9212),
-    ("10029", "East Harlem", "Manhattan", 40.7919, -73.9441),
-    ("10035", "East Harlem North", "Manhattan", 40.8021, -73.9297),
-    # ---- Manhattan, Upper West and East ----
-    ("10024", "Upper West Side (lower)", "Manhattan", 40.7862, -73.9776),
-    ("10023", "Lincoln Square", "Manhattan", 40.7759, -73.9822),
-    ("10128", "Upper East Side (Carnegie Hill)", "Manhattan", 40.7816, -73.9505),
-    ("10028", "Upper East Side", "Manhattan", 40.7764, -73.9535),
-    ("10021", "Upper East Side (Lenox Hill)", "Manhattan", 40.7695, -73.9585),
-    # ---- Manhattan, midtown ----
-    ("10019", "Midtown / Columbus Circle", "Manhattan", 40.7657, -73.9870),
-    ("10036", "Hell's Kitchen", "Manhattan", 40.7597, -73.9900),
-    ("10022", "Midtown East", "Manhattan", 40.7585, -73.9679),
-    ("10018", "Midtown West", "Manhattan", 40.7549, -73.9930),
-    ("10017", "Midtown East (Tudor City)", "Manhattan", 40.7522, -73.9723),
-    ("10001", "Chelsea / Penn Station", "Manhattan", 40.7506, -73.9971),
-    ("10016", "Murray Hill", "Manhattan", 40.7457, -73.9784),
-    # ---- Manhattan, downtown ----
-    ("10011", "Chelsea", "Manhattan", 40.7420, -74.0007),
-    ("10010", "Gramercy", "Manhattan", 40.7388, -73.9821),
-    ("10014", "West Village", "Manhattan", 40.7339, -74.0060),
-    ("10003", "East Village / NoHo", "Manhattan", 40.7316, -73.9890),
-    ("10009", "Alphabet City", "Manhattan", 40.7264, -73.9793),
-    ("10012", "SoHo / NoHo", "Manhattan", 40.7255, -73.9976),
-    ("10013", "Tribeca / Hudson Square", "Manhattan", 40.7202, -74.0050),
-    ("10002", "Lower East Side", "Manhattan", 40.7157, -73.9870),
-    ("10038", "Financial District", "Manhattan", 40.7092, -74.0027),
-    ("10280", "Battery Park City", "Manhattan", 40.7089, -74.0170),
-    # ---- Queens ----
-    ("11101", "Long Island City", "Queens", 40.7505, -73.9370),
-    ("11106", "Astoria", "Queens", 40.7620, -73.9310),
-    ("11375", "Forest Hills", "Queens", 40.7210, -73.8458),
-    ("11354", "Flushing", "Queens", 40.7678, -73.8331),
-    # ---- Brooklyn ----
-    ("11201", "Brooklyn Heights", "Brooklyn", 40.6939, -73.9903),
-    ("11205", "Fort Greene", "Brooklyn", 40.6947, -73.9656),
-    ("11211", "Williamsburg", "Brooklyn", 40.7141, -73.9535),
-    ("11217", "Boerum Hill", "Brooklyn", 40.6829, -73.9787),
-    ("11238", "Prospect Heights", "Brooklyn", 40.6790, -73.9640),
-    ("11215", "Park Slope", "Brooklyn", 40.6672, -73.9857),
-    # ---- Bronx ----
-    ("10451", "South Bronx", "Bronx", 40.8203, -73.9224),
-    ("10463", "Riverdale / Kingsbridge", "Bronx", 40.8807, -73.9065),
+def _load_backend_geo():
+    if not os.path.exists(_GEO_PATH):
+        raise RuntimeError(
+            "Cannot find the ZIP table at %s. It is the single source of truth "
+            "for ZIP codes and centroids; if the backend moved, update _GEO_PATH "
+            "rather than pasting the table back into this file." % _GEO_PATH
+        )
+    name = "_backend_geo"
+    spec = importlib.util.spec_from_file_location(name, _GEO_PATH)
+    module = importlib.util.module_from_spec(spec)
+    # Register before executing: geo.py declares a @dataclass, and dataclasses
+    # resolves field types through sys.modules[cls.__module__]. Without this the
+    # import dies with "NoneType has no attribute __dict__".
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+_geo = _load_backend_geo()
+
+# 116th & Broadway, and the radius the backend measures with. Taken from geo.py
+# too, so there is one campus and one earth rather than two of each.
+CAMPUS_LAT = _geo.CAMPUS_LAT
+CAMPUS_LON = _geo.CAMPUS_LON
+EARTH_RADIUS_MI = _geo.EARTH_RADIUS_MI
+
+# (zip, neighbourhood, borough, lat, lon), in the backend's order.
+_ZIP_ROWS = tuple(
+    (z.zip_code, z.neighbourhood, z.borough, z.lat, z.lon) for z in _geo.ZIPS
 )
 
 # §4.6 gives these eight explicitly. Kept verbatim as display copy even though a

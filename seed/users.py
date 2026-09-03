@@ -209,10 +209,18 @@ def _draw_username(rng, given: str, family: str, taken: "set[str]") -> str:
         n += 1
 
 
-def _draw_email(rng, given: str, family: str, taken: "set[str]") -> str:
+def _draw_email(rng, given: str, family: str, school: str, taken: "set[str]") -> str:
+    """UNI-style address on the domain the member's school issues.
+
+    CBS members are on @gsb.columbia.edu, Teachers College on @tc, Mailman and
+    VP&S on @cumc, everyone else on plain @columbia.edu. All four are exercised
+    by the corpus, so the multi-domain sign-in path (backend/app/emails.py) is
+    tested by the data rather than only by a hand-typed address.
+    """
     initials = (_slugify(given)[:1] + _slugify(family)[:1]).lower() or "cu"
+    domain = V.email_domain_for(school)
     while True:
-        candidate = "%s%d@%s" % (initials, rng.randint(1000, 9999), V.EMAIL_DOMAIN)
+        candidate = "%s%d@%s" % (initials, rng.randint(1000, 9999), domain)
         if candidate not in taken:
             return candidate
 
@@ -229,7 +237,7 @@ def generate_users(rng, count: int, now: dt.datetime) -> "list[dict]":
         nationality = _weighted(rng, N.NATIONALITY_WEIGHTS)
         given, family = N.draw_name(rng, nationality)
 
-        email = _draw_email(rng, given, family, emails)
+        email = _draw_email(rng, given, family, school, emails)
         emails.add(email)
         username = _draw_username(rng, given, family, usernames)
         usernames.add(username)

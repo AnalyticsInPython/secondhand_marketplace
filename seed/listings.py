@@ -193,7 +193,10 @@ def _make_photos(rng, listing_id: str, count: int, posted_at: dt.datetime) -> "l
         {
             "id": str(uuid.UUID(int=rng.getrandbits(128), version=4)),
             "listing_id": listing_id,
-            "url": "photos/%s/%d.webp" % (listing_id, position),
+            # Root-relative. A bare "photos/..." resolves against the current
+            # path, so it works on the feed at "/" and 404s on the detail page
+            # at "/listings/<id>", which is exactly the bug it caused.
+            "url": "/photos/%s/%d.webp" % (listing_id, position),
             "position": position,
             "created_at": posted_at,
         }
@@ -236,7 +239,7 @@ def generate_listings(rng, users, internal_count, external_count, now):
             continue
 
         category = _weighted(rng, C.CATEGORY_WEIGHTS)
-        subcategory, title, band = C.draw_item(rng, category)
+        subcategory, title, band, photo_query = C.draw_item(rng, category)
         condition = _draw_condition(rng, category)
 
         if category == "free_stuff":
@@ -273,6 +276,10 @@ def generate_listings(rng, users, internal_count, external_count, now):
             "external_url": None,
             "posted_at": posted_at,
             "sold_at": sold_at,
+            # Not a column. Generator metadata for scripts/fetch_photos.py,
+            # written to data/photo_queries.csv rather than into listings.csv --
+            # the schema in UX_SPEC §4.2 has no room for it and should not.
+            "_photo_query": photo_query,
         })
         photos.extend(
             _make_photos(rng, listing_id, _draw_photo_count(rng, price_cents), posted_at)
@@ -287,7 +294,7 @@ def generate_listings(rng, users, internal_count, external_count, now):
     for _ in range(external_count):
         source = _weighted(rng, EXTERNAL_SOURCE_WEIGHTS)
         category = _weighted(rng, C.CATEGORY_WEIGHTS)
-        subcategory, title, band = C.draw_item(rng, category)
+        subcategory, title, band, photo_query = C.draw_item(rng, category)
         condition = _draw_condition(rng, category)
         is_free = category == "free_stuff"
         price_cents = 0 if is_free else C.draw_price_cents(rng, category, condition, band)
@@ -318,6 +325,7 @@ def generate_listings(rng, users, internal_count, external_count, now):
             "external_url": _EXTERNAL_URL_SHAPE[source] % rng.randint(10**11, 10**12 - 1),
             "posted_at": posted_at,
             "sold_at": None,
+            "_photo_query": photo_query,
         })
         photos.extend(
             _make_photos(rng, listing_id, rng.randint(1, 4), posted_at)

@@ -19,3 +19,12 @@ out/
 .DS_Store
 .vscode/
 .idea/
+
+# Generated placeholder photos. ~5,800 files and ~46MB, carrying no information
+# that is not already in data/listing_photos.csv. Rebuild with:
+#   python3 scripts/make_photos.py --out frontend/public/photos
+frontend/public/photos/
+photos/
+
+# Downloaded Pexels originals. Cached locally; rebuild with scripts/fetch_photos.py
+data/photo_pool/

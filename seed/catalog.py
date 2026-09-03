@@ -149,77 +149,119 @@ SLOTS: "dict[str, tuple[str, ...]]" = {
 # ---------------------------------------------------------------------------
 # Templates
 #
-# (subcategory, title, used_good price band)
+# (subcategory, title, used_good price band, photo query)
+#
+# The fourth field is what `scripts/fetch_photos.py` searches Pexels for. It
+# shares slot values with the title -- both are filled from one resolution -- so
+# a listing titled "IKEA MALM desk 140x65, white" fetches "white wooden desk"
+# rather than a random desk.
+#
+# Templates that used to hide several different objects behind one slot are now
+# split, because "{kitchen_small}" covered a rice cooker, a blender and a kettle
+# and no single query matches all three. That is why there are ~90 templates for
+# ~105 nouns rather than 50: the photo has to know what the thing is.
+#
+# Queries are deliberately generic nouns plus the attribute that varies. Free
+# photo libraries have no brand-exact shots, so "Herman Miller Aeron" searches
+# for "black mesh office chair" and gets a real office chair -- the kind of thing
+# matches, the brand does not. Anything more specific returns nothing.
 # ---------------------------------------------------------------------------
 
-TEMPLATES: "dict[str, tuple[tuple[str | None, str, tuple[int, int]], ...]]" = {
+TEMPLATES: "dict[str, tuple[tuple[str | None, str, tuple[int, int], str], ...]]" = {
     "furniture": (
-        ("desks", "IKEA {ikea_desk} desk {size_cm}, {wood}", (35, 110)),
-        ("desks", "Standing desk, electric, {size_cm}", (90, 260)),
-        ("desks", "Small writing desk, {wood}", (30, 90)),
-        ("chairs", "{chair_brand}, {chair_size}", (60, 340)),
-        ("chairs", "Desk chair, {colour}, adjustable", (25, 90)),
-        ("chairs", "Pair of dining chairs, {wood}", (30, 100)),
-        ("beds_mattresses", "{mattress} mattress + metal frame", (60, 190)),
-        ("beds_mattresses", "IKEA {ikea_bed} bed frame, {mattress}", (50, 160)),
-        ("beds_mattresses", "Memory foam mattress topper, {mattress}", (20, 70)),
-        ("storage_shelving", "IKEA {ikea_shelf} shelf unit, {wood}", (30, 110)),
-        ("storage_shelving", "3-drawer dresser, {colour}", (40, 130)),
-        ("storage_shelving", "Rolling clothes rack + hangers", (20, 60)),
-        ("sofas_tables", "{sofa} sofa, {colour}", (70, 320)),
-        ("sofas_tables", "Coffee table, {wood}", (30, 110)),
-        ("sofas_tables", "Folding dining table + 2 chairs", (45, 140)),
+        ("desks", "IKEA {ikea_desk} desk {size_cm}, {wood}", (35, 110), "{wood} wooden desk"),
+        ("desks", "Standing desk, electric, {size_cm}", (90, 260), "standing desk office"),
+        ("desks", "Small writing desk, {wood}", (30, 90), "small writing desk"),
+        ("chairs", "{chair_brand}, {chair_size}", (60, 340), "black mesh office chair"),
+        ("chairs", "Desk chair, {colour}, adjustable", (25, 90), "{colour} desk chair"),
+        ("chairs", "Pair of dining chairs, {wood}", (30, 100), "wooden dining chairs"),
+        ("beds_mattresses", "{mattress} mattress + metal frame", (60, 190), "mattress bed frame"),
+        ("beds_mattresses", "IKEA {ikea_bed} bed frame, {mattress}", (50, 160), "wooden bed frame"),
+        ("beds_mattresses", "Memory foam mattress topper, {mattress}", (20, 70), "mattress bedroom"),
+        ("storage_shelving", "IKEA {ikea_shelf} shelf unit, {wood}", (30, 110), "bookshelf shelving unit"),
+        ("storage_shelving", "3-drawer dresser, {colour}", (40, 130), "chest of drawers dresser"),
+        ("storage_shelving", "Rolling clothes rack + hangers", (20, 60), "clothes rack hangers"),
+        ("sofas_tables", "{sofa} sofa, {colour}", (70, 320), "{colour} sofa couch"),
+        ("sofas_tables", "Coffee table, {wood}", (30, 110), "coffee table living room"),
+        ("sofas_tables", "Folding dining table + 2 chairs", (45, 140), "small dining table"),
     ),
     "textbooks": (
-        (None, "{subject} ({publisher}) {edition} ed.", (18, 70)),
-        (None, "{subject} {edition} ed. + solutions manual", (25, 85)),
-        (None, "{subject} — full course bundle", (30, 88)),
-        (None, "{subject} reader, spiral bound", (12, 40)),
-        (None, "{subject} ({publisher}), international edition", (14, 55)),
+        (None, "{subject} ({publisher}) {edition} ed.", (18, 70), "college textbook"),
+        (None, "{subject} {edition} ed. + solutions manual", (25, 85), "stack of textbooks"),
+        (None, "{subject} — full course bundle", (30, 88), "pile of books study"),
+        (None, "{subject} reader, spiral bound", (12, 40), "spiral notebook binder"),
+        (None, "{subject} ({publisher}), international edition", (14, 55), "open textbook desk"),
     ),
     "electronics": (
-        (None, "{laptop}, 8GB/256GB", (180, 480)),
-        (None, "{monitor} monitor + stand", (60, 220)),
-        (None, "{audio} headphones", (60, 200)),
-        # Split from one "{tablet}" template: a Kindle and an iPad Air cannot
-        # share a price band without one of them coming out absurd.
-        (None, "{ipad}, wifi", (150, 320)),
-        (None, "{ereader}, wifi", (55, 150)),
-        (None, "Mechanical keyboard, {colour}", (35, 120)),
-        (None, "Logitech mouse + desk mat", (30, 70)),
-        (None, "Dyson V8 cordless vacuum, all heads", (110, 300)),
-        (None, "Anker power strip + USB-C hub", (30, 60)),
+        (None, "{laptop}, 8GB/256GB", (180, 480), "laptop computer"),
+        (None, "{monitor} monitor + stand", (60, 220), "computer monitor desk"),
+        (None, "{audio} headphones", (60, 200), "over ear headphones"),
+        (None, "{ipad}, wifi", (150, 320), "tablet device"),
+        (None, "{ereader}, wifi", (55, 150), "e-reader ebook"),
+        (None, "Mechanical keyboard, {colour}", (35, 120), "mechanical keyboard"),
+        (None, "Logitech mouse + desk mat", (30, 70), "computer mouse desk"),
+        (None, "Dyson V8 cordless vacuum, all heads", (110, 300), "vacuum cleaner"),
+        (None, "Anker power strip + USB-C hub", (30, 60), "usb cables charger"),
     ),
     "kitchen_home": (
-        (None, "{kitchen_small}", (20, 95)),
-        (None, "{cookware}", (18, 80)),
-        (None, "{appliance}, works fine", (25, 110)),
-        (None, "Water filter pitcher + 2 filters", (10, 30)),
-        (None, "Set of 4 mugs and 4 glasses", (10, 28)),
+        # Split out of one "{kitchen_small}" template: no single query matches a
+        # rice cooker, an espresso machine and a kettle.
+        (None, "Cuckoo 6-cup rice cooker, barely used", (25, 95), "rice cooker"),
+        (None, "Instant Pot Duo 6qt", (30, 90), "pressure cooker instant pot"),
+        (None, "Nespresso Essenza coffee machine", (35, 100), "espresso coffee machine"),
+        (None, "Hamilton Beach blender", (20, 60), "kitchen blender"),
+        (None, "Cuisinart toaster oven", (25, 80), "toaster oven"),
+        (None, "Zojirushi electric kettle", (20, 70), "electric kettle"),
+        (None, "10-piece pot and pan set", (30, 90), "pots and pans cookware"),
+        (None, "Cast iron skillet, seasoned", (18, 55), "cast iron skillet"),
+        (None, "12-piece dinnerware set", (20, 70), "dinner plates dishes"),
+        (None, "Mini fridge, works fine", (40, 110), "mini fridge"),
+        (None, "Microwave, 700W", (25, 80), "microwave oven"),
+        (None, "Air purifier + spare filter", (35, 110), "air purifier"),
+        (None, "Standing fan, 3 speeds", (18, 55), "standing floor fan"),
+        (None, "Water filter pitcher + 2 filters", (10, 30), "water filter pitcher"),
+        (None, "Set of 4 mugs and 4 glasses", (10, 28), "coffee mugs glasses"),
+        # Lives here rather than in electronics: §9 floors electronics at $30
+        # and a second-hand desk lamp does not clear it.
+        (None, "Desk lamp, {colour}, dimmable", (15, 55), "desk lamp"),
     ),
     "clothing": (
-        (None, "{outerwear}, {clothing_size}", (60, 240)),
-        (None, "{shoes}, US 9", (35, 130)),
-        (None, "Winter boots, {clothing_size}, waterproof", (30, 110)),
-        (None, "Suit, {clothing_size}, tailored once", (60, 220)),
-        (None, "Wool scarf and glove set", (10, 40)),
+        (None, "{outerwear}, {clothing_size}", (60, 240), "winter parka coat"),
+        (None, "Wool overcoat, {clothing_size}", (60, 200), "wool overcoat"),
+        (None, "{shoes}, US 9", (35, 130), "sneakers shoes"),
+        (None, "Winter boots, {clothing_size}, waterproof", (30, 110), "winter boots"),
+        (None, "Suit, {clothing_size}, tailored once", (60, 220), "mens suit"),
+        (None, "Wool scarf and glove set", (10, 40), "wool scarf gloves"),
+        (None, "Rain jacket, {clothing_size}", (25, 90), "rain jacket"),
     ),
     "bikes_transport": (
-        (None, "{bike}, {bike_size}", (90, 380)),
-        (None, "{micro}", (80, 300)),
-        (None, "Bike lock, lights and helmet bundle", (25, 70)),
-        (None, "Folding shopping cart", (20, 45)),
-        (None, "{bike}, {bike_size}, recently serviced", (110, 390)),
-        (None, "Bike rack and floor pump", (20, 55)),
+        (None, "{bike}, {bike_size}", (90, 380), "hybrid commuter bicycle"),
+        (None, "{bike}, {bike_size}, recently serviced", (110, 390), "road bicycle"),
+        (None, "Xiaomi M365 electric scooter", (80, 300), "electric scooter"),
+        (None, "Razor kick scooter", (20, 60), "kick scooter"),
+        (None, "Bike lock, lights and helmet bundle", (25, 70), "bike helmet lock"),
+        (None, "Folding shopping cart", (20, 45), "shopping trolley cart"),
+        (None, "Bike rack and floor pump", (20, 55), "bicycle pump"),
     ),
     "sports": (
-        (None, "{sports_gear}", (12, 130)),
-        (None, "Weight bench, folding", (40, 160)),
-        (None, "Ski jacket and poles, {clothing_size}", (45, 190)),
+        (None, "Yoga mat + blocks", (12, 45), "yoga mat"),
+        (None, "Adjustable dumbbell pair", (40, 130), "dumbbells weights"),
+        (None, "Wilson tennis racket + balls", (25, 90), "tennis racket"),
+        (None, "Spalding basketball", (12, 35), "basketball"),
+        (None, "Rollerblades, US 9", (30, 90), "rollerblades skates"),
+        (None, "Resistance band set", (12, 35), "resistance bands"),
+        (None, "Weight bench, folding", (40, 160), "weight bench gym"),
+        (None, "Ski jacket and poles, {clothing_size}", (45, 190), "ski jacket poles"),
     ),
     "free_stuff": (
-        (None, "{free_item} — free to a good home", (0, 0)),
-        (None, "{free_item}, collect this week", (0, 0)),
+        (None, "Moving boxes — free to a good home", (0, 0), "cardboard moving boxes"),
+        (None, "Desk lamp, collect this week", (0, 0), "desk lamp"),
+        (None, "Full-length mirror — free to a good home", (0, 0), "full length mirror"),
+        (None, "Drying rack, collect this week", (0, 0), "clothes drying rack"),
+        (None, "Houseplant (pothos) — free to a good home", (0, 0), "pothos houseplant"),
+        (None, "Shoe rack, collect this week", (0, 0), "shoe rack"),
+        (None, "Curtain rod set — free to a good home", (0, 0), "curtains window"),
+        (None, "Assorted kitchen utensils, collect this week", (0, 0), "kitchen utensils"),
     ),
 }
 
@@ -288,14 +330,23 @@ EXTRA_LINE_RATE = 0.35
 # ---------------------------------------------------------------------------
 
 
-def _fill(rng, template: str) -> str:
-    """Resolve every ``{slot}`` in a template from :data:`SLOTS`."""
+def _fill(rng, template: str, chosen=None) -> str:
+    """Resolve every ``{slot}`` in a template from :data:`SLOTS`.
+
+    ``chosen`` is a dict shared across several templates so they agree: the title
+    and the photo query are filled together, and a listing titled "... , white"
+    must not fetch a photo of an oak one.
+    """
+    if chosen is None:
+        chosen = {}
     out = template
     while "{" in out:
         start = out.index("{")
         end = out.index("}", start)
         slot = out[start + 1:end]
-        out = out[:start] + rng.choice(SLOTS[slot]) + out[end + 1:]
+        if slot not in chosen:
+            chosen[slot] = rng.choice(SLOTS[slot])
+        out = out[:start] + chosen[slot] + out[end + 1:]
     return out
 
 
@@ -312,19 +363,22 @@ def _sentence_case(text: str) -> str:
 def draw_item(rng, category: str) -> "tuple[str | None, str, tuple[int, int]]":
     """Pick a template for a category and render its title.
 
-    Returns ``(subcategory, title, used_good_price_band)``. The title is retried
+    Returns ``(subcategory, title, used_good_price_band, photo_query)``. The title is retried
     if a slot combination overruns §4.2's 60-character limit, which a couple of
     the longer brand/size pairings can do.
     """
     templates = TEMPLATES[category]
     for _ in range(24):
-        subcategory, pattern, band = rng.choice(templates)
-        title = _sentence_case(_fill(rng, pattern))
+        subcategory, pattern, band, query_pattern = rng.choice(templates)
+        chosen = {}
+        title = _sentence_case(_fill(rng, pattern, chosen))
         if len(title) <= V.TITLE_MAX_CHARS:
-            return subcategory, title, band
+            # Same `chosen`, so the query inherits the title's colour and size.
+            return subcategory, title, band, _fill(rng, query_pattern, chosen)
     # Every retry overran: fall back to a truncation on a word boundary rather
     # than emitting an invalid row.
-    return subcategory, title[:V.TITLE_MAX_CHARS].rsplit(" ", 1)[0], band
+    return (subcategory, title[:V.TITLE_MAX_CHARS].rsplit(" ", 1)[0], band,
+            _fill(rng, query_pattern, chosen))
 
 
 def draw_description(rng, condition: str) -> "str | None":
@@ -385,7 +439,7 @@ def _check() -> None:
     for category, templates in TEMPLATES.items():
         assert templates, "%s has no templates" % category
         low, high = CATEGORY_PRICE_RANGE[category]
-        for subcategory, pattern, band in templates:
+        for subcategory, pattern, band, query in templates:
             assert V.is_valid_subcategory(category, subcategory), (
                 "%s: subcategory %r does not belong to it" % (category, subcategory)
             )
@@ -399,9 +453,18 @@ def _check() -> None:
             assert low <= band[0] and band[1] <= high, (
                 "%s: band %s escapes the §9 range %s" % (category, band, (low, high))
             )
-            # Every slot the template names must exist.
-            for slot in _slots_in(pattern):
+            # Every slot either template names must exist, and the query may
+            # only use slots the title also fills -- otherwise they disagree.
+            title_slots = set(_slots_in(pattern))
+            for slot in title_slots:
                 assert slot in SLOTS, "%s: unknown slot {%s}" % (category, slot)
+            for slot in _slots_in(query):
+                assert slot in SLOTS, "%s: query names unknown slot {%s}" % (category, slot)
+                assert slot in title_slots, (
+                    "%s: query uses {%s} but the title does not, so they would "
+                    "resolve to different values" % (category, slot)
+                )
+            assert query.strip(), "%s: template has no photo query" % category
 
     for pattern in _LOGISTICS_LINES:
         for slot in _slots_in(pattern):

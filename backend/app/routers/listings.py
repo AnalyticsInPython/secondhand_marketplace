@@ -89,12 +89,19 @@ def _filtered(
     if radius_mi is not None and viewer is not None:
         query = query.filter(Listing.zip_code.in_(geo.zips_within(viewer.zip_code, radius_mi)))
 
-    # Trust filters. Each one implicitly excludes external listings, because an
-    # aggregated eBay item has no seller to share anything with. That is the
-    # intended behaviour, not a bug: "same country" means a person.
+    # Trust filters. Each one excludes external listings, because an aggregated
+    # eBay item has no seller to share anything with. That is the intended
+    # behaviour, not a bug: "same country" means a person.
+    #
+    # same_zip compares the SELLER's ZIP, not the listing's. Two reasons: it is
+    # what §5.3 computes the SAME ZIP badge from, so the filter and the badge
+    # cannot disagree; and filtering on Listing.zip_code let external listings
+    # through, since they carry a pickup ZIP but no seller — which contradicted
+    # the paragraph above. On the seeded corpus that admitted 10 eBay and
+    # Facebook rows into a trust-filtered feed.
     if viewer is not None:
         if same_zip:
-            query = query.filter(Listing.zip_code == viewer.zip_code)
+            query = query.filter(Seller.zip_code == viewer.zip_code)
         if same_nationality:
             query = query.filter(Seller.nationality == viewer.nationality)
         if same_school:
