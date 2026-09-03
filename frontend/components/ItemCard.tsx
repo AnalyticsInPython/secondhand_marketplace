@@ -31,7 +31,23 @@ export function ItemCard({ item }: { item: Item }) {
           />
         )}
         <div className="relative flex items-start justify-between">
-          {item.is_external ? (
+          {/* Status wins over condition when the listing is not on sale.
+              §6.4 gives reserved and sold their own rendering, and on My
+              listings the owner needs to tell a draft from a live post at a
+              glance — the condition is the less useful fact in both cases. */}
+          {item.status !== "active" ? (
+            <span
+              className={`rounded-full px-2.5 py-1 text-[10px] font-semibold tracking-[0.02em] text-white ${
+                item.status === "sold"
+                  ? "bg-[var(--color-overlay)]"
+                  : item.status === "reserved"
+                    ? "bg-warn"
+                    : "bg-ink3"
+              }`}
+            >
+              {item.status === "sold" ? "SOLD" : item.status === "reserved" ? "RESERVED" : "DRAFT"}
+            </span>
+          ) : item.is_external ? (
             <ExternalBadge label={item.source_label} />
           ) : (
             <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-semibold tracking-[0.02em] text-deep">

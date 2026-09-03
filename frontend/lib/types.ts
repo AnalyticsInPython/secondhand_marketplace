@@ -129,3 +129,15 @@ export interface FeedFilters {
   limit?: number;
   offset?: number;
 }
+
+/**
+ * One row of the inbox. There is no in-app chat (UX_SPEC §1), so this records a
+ * contact made rather than a conversation: which listing, which channel, when.
+ */
+export interface EnquiryRow {
+  id: string;
+  channel: "email" | "sms";
+  created_at: string;
+  listing: ListingCard;
+  seller_username: string | null;
+}

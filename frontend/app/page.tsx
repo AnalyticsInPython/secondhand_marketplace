@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { DistanceSlider } from "@/components/DistanceSlider";
 import { ItemCard, ItemRow } from "@/components/ItemCard";
@@ -18,13 +18,17 @@ const SORTS: { value: SortOrder; label: string }[] = [
   { value: "most_saved", label: "Most saved" },
 ];
 
+const PAGE_SIZE = 24;
+
 export default function FeedPage() {
+  const sentinel = useRef<HTMLDivElement>(null);
   const [me, setMe] = useState<Me | null>(null);
   const [items, setItems] = useState<ListingCard[]>([]);
   const [facets, setFacets] = useState<FacetCounts | null>(null);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [filters, setFilters] = useState<FeedFilters>({ sort: "newest", limit: 24 });
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [filters, setFilters] = useState<FeedFilters>({ sort: "newest", limit: PAGE_SIZE });
 
   useEffect(() => {
     api
@@ -58,6 +62,44 @@ export default function FeedPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  /**
+   * Load the next page and append it.
+   *
+   * The API has always returned `next_cursor`; nothing was reading it, so the
+   * feed rendered the first 24 of however many the header claimed. Appending
+   * rather than replacing is the whole point: filters reset to offset 0, but
+   * scrolling adds.
+   */
+  const loadMore = useCallback(async () => {
+    if (loadingMore || items.length >= total) return;
+    setLoadingMore(true);
+    try {
+      const page = await api.listings({ ...filters, offset: items.length });
+      // Guard against a filter change landing mid-flight and duplicating rows.
+      setItems((current) => {
+        const seen = new Set(current.map((i) => i.id));
+        return [...current, ...page.items.filter((i) => !seen.has(i.id))];
+      });
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [filters, items.length, total, loadingMore]);
+
+  // Auto-load when the sentinel scrolls into view. The button below it stays
+  // real and clickable, so this works without an observer too.
+  useEffect(() => {
+    const node = sentinel.current;
+    if (!node) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) void loadMore();
+      },
+      { rootMargin: "600px" },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [loadMore]);
 
   function patch(next: Partial<FeedFilters>) {
     setFilters((f) => ({ ...f, ...next, offset: 0 }));
@@ -236,6 +278,28 @@ export default function FeedPage() {
                 {items.map((item) => (
                   <ItemRow key={item.id} item={item} />
                 ))}
+              </div>
+
+              <div ref={sentinel} className="flex flex-col items-center gap-3 py-10">
+                {items.length < total ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => void loadMore()}
+                      disabled={loadingMore}
+                      className="rounded-[10px] border border-line bg-surface px-5 py-3 text-[14px] font-semibold text-deep disabled:opacity-60"
+                    >
+                      {loadingMore ? "Loading…" : "Load more"}
+                    </button>
+                    <p className="text-[12.5px] text-ink3">
+                      Showing {items.length} of {total}
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-[12.5px] text-ink3">
+                    That is all {total} {total === 1 ? "item" : "items"}.
+                  </p>
+                )}
               </div>
             </>
           )}
