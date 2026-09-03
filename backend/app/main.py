@@ -2,20 +2,34 @@
 
     uvicorn app.main:app --reload --port 8000
 
-Docs at http://localhost:8000/docs once it is up.
+Docs at http://localhost:8000/docs once it is up. Behaviour is specified in
+docs/UX_SPEC.md; decisions that changed it are in docs/DECISIONS.md.
 """
+
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .db import create_all
-from .routers import auth, listings, reference, users
+from .routers import auth, listings, photos, reference, users
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # Fine for the pilot. Introduce Alembic before the schema stabilises.
+    create_all()
+    settings.media_dir.mkdir(parents=True, exist_ok=True)
+    yield
+
 
 app = FastAPI(
     title="Columbia Market API",
-    version="0.1.0",
-    description="See docs/UX_SPEC.md for the behaviour this API is meant to serve.",
+    version="0.2.0",
+    description="A used-goods marketplace for verified Columbia members. See docs/UX_SPEC.md.",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -29,15 +43,14 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(listings.router)
+app.include_router(photos.router)
 app.include_router(reference.router)
 
-
-@app.on_event("startup")
-def on_startup() -> None:
-    # Fine for the pilot. Introduce Alembic before the schema stabilises.
-    create_all()
+# Processed photos. Nothing here carries metadata (services/photos.py).
+settings.media_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/media", StaticFiles(directory=settings.media_dir), name="media")
 
 
-@app.get("/health")
+@app.get("/health", tags=["meta"])
 def health() -> dict[str, str]:
-    return {"status": "ok"}
+    return {"status": "ok", "version": app.version}

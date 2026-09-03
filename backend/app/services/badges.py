@@ -7,7 +7,7 @@ already share it*.
 An attribute that does not match is not returned as `false` and not returned as
 `null` — it is absent from the payload entirely. If the client ever receives the
 seller's raw nationality or school, the rule is broken no matter what the UI
-chooses to render.
+chooses to render. `tests/test_disclosure.py` checks exactly that.
 """
 
 from __future__ import annotations
@@ -22,13 +22,13 @@ SAME_SCHOOL = "SAME SCHOOL"
 def badges_for(viewer: User | None, seller: User | None) -> list[str]:
     """Badges to show `viewer` on a listing sold by `seller`.
 
-    Signed-out viewers and external listings both get an empty list: there is no
-    overlap to speak of, so nothing is disclosed.
+    A missing viewer or seller yields an empty list: there is no overlap to
+    speak of, so nothing is disclosed. Your own listing needs no badges.
     """
     if viewer is None or seller is None:
         return []
     if viewer.id == seller.id:
-        return []  # your own listing needs no badges
+        return []
 
     out: list[str] = []
     if viewer.zip_code == seller.zip_code:

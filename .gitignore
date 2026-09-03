@@ -19,3 +19,9 @@ out/
 .DS_Store
 .vscode/
 .idea/
+
+# Processed photo uploads (local pilot storage)
+backend/media/
+
+# Local tooling
+.claude/

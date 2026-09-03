@@ -1,12 +1,14 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { MobileTabBar, TopNav } from "@/components/TopNav";
-import { Button, Card, Field, Input, PinIcon, SectionLabel, Toggle } from "@/components/ui";
+import { Button, Card, Field, Input, PinIcon, SectionLabel, Segmented, Select, Toggle } from "@/components/ui";
 import { api } from "@/lib/api";
-import type { Me } from "@/lib/types";
+import { price, relativeTime, STATUS_LABELS } from "@/lib/format";
+import type { Country, EnumsRef, Grade, ListingCard, Me } from "@/lib/types";
 
 /**
  * Profile & account — UX_SPEC.md §6.6.
@@ -20,9 +22,18 @@ export default function ProfilePage() {
   const [me, setMe] = useState<Me | null>(null);
   const [draft, setDraft] = useState<Partial<Me>>({});
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [countries, setCountries] = useState<Country[]>([]);
+  const [enums, setEnums] = useState<EnumsRef | null>(null);
+  const [mine, setMine] = useState<ListingCard[]>([]);
+  const [saved, setSaved] = useState<ListingCard[]>([]);
 
   useEffect(() => {
-    api.me().then(setMe).catch(() => router.push("/signin"));
+    api.me().then(setMe).catch(() => router.replace("/signin"));
+    api.countries().then(setCountries).catch(() => setCountries([]));
+    api.enums().then(setEnums).catch(() => setEnums(null));
+    api.myListings().then(setMine).catch(() => setMine([]));
+    api.savedListings().then(setSaved).catch(() => setSaved([]));
   }, [router]);
 
   if (!me) return <div className="p-10 text-ink2">Loading…</div>;
@@ -32,15 +43,31 @@ export default function ProfilePage() {
 
   async function save() {
     setSaving(true);
+    setError(null);
     try {
       setMe(await api.updateMe(draft));
       setDraft({});
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not save");
     } finally {
       setSaving(false);
     }
   }
 
+  async function signOut() {
+    await api.signout().catch(() => {});
+    router.replace("/signin");
+  }
+
+  async function deactivate() {
+    if (!window.confirm("Deactivate your account? Your listings leave the feed. Signing in again brings everything back.")) return;
+    await api.deactivate();
+    router.replace("/signin");
+  }
+
   const hasPhone = Boolean(value("phone"));
+  const pinned = countries.filter((c) => c.pinned);
+  const rest = countries.filter((c) => !c.pinned);
 
   return (
     <>
@@ -58,6 +85,18 @@ export default function ProfilePage() {
         {/* Identity */}
         <Card className="flex flex-col gap-5 p-6 md:p-7">
           <SectionLabel>IDENTITY</SectionLabel>
+          <div className="flex items-center gap-3.5">
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-light text-[17px] font-bold text-deep">
+              {me.username.slice(0, 2).toUpperCase()}
+            </span>
+            <div>
+              <p className="text-[16px] font-bold">@{me.username}</p>
+              <p className="text-[12.5px] text-ink2">
+                {me.is_verified ? "Verified" : "Unverified"} · member since{" "}
+                {new Date(me.created_at).toLocaleDateString("en-US", { month: "short", year: "numeric" })}
+              </p>
+            </div>
+          </div>
           <Field
             label="Columbia email"
             locked
@@ -80,21 +119,56 @@ export default function ProfilePage() {
           <SectionLabel>MATCHING ATTRIBUTES</SectionLabel>
           <div className="grid gap-5 md:grid-cols-2">
             <Field label="Nationality">
-              <Input
-                value={value("nationality")}
-                onChange={(v) => setDraft({ ...draft, nationality: v.toUpperCase() })}
-              />
+              <Select value={value("nationality")} onChange={(v) => setDraft({ ...draft, nationality: v })}>
+                <optgroup label="Most common at Columbia">
+                  {pinned.map((c) => (
+                    <option key={c.code} value={c.code}>
+                      {c.name}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="All countries">
+                  {rest.map((c) => (
+                    <option key={c.code} value={c.code}>
+                      {c.name}
+                    </option>
+                  ))}
+                </optgroup>
+              </Select>
             </Field>
             <Field label="College / School">
-              <Input value={value("school")} onChange={(v) => setDraft({ ...draft, school: v })} />
+              <Select value={value("school")} onChange={(v) => setDraft({ ...draft, school: v })}>
+                <optgroup label="Undergraduate">
+                  {enums?.schools.undergraduate.map((s) => (
+                    <option key={s.value} value={s.value}>
+                      {s.label}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Graduate & professional">
+                  {enums?.schools.graduate.map((s) => (
+                    <option key={s.value} value={s.value}>
+                      {s.label}
+                    </option>
+                  ))}
+                </optgroup>
+              </Select>
             </Field>
             <Field label="Grade">
-              <Input value={value("grade")} onChange={(v) => setDraft({ ...draft, grade: v as Me["grade"] })} />
+              <Segmented<Grade>
+                value={value("grade")}
+                onChange={(g) => setDraft({ ...draft, grade: g })}
+                options={[
+                  { value: "undergraduate", label: "Undergraduate" },
+                  { value: "graduate", label: "Graduate" },
+                  { value: "faculty_staff", label: "Faculty / Staff" },
+                ]}
+              />
             </Field>
-            <Field label="ZIP code" hint="Changing this re-centres your feed.">
+            <Field label="ZIP code" hint="Changing this re-centres your feed. NYC metro only.">
               <Input
                 value={value("zip_code")}
-                onChange={(v) => setDraft({ ...draft, zip_code: v })}
+                onChange={(v) => setDraft({ ...draft, zip_code: v.replace(/\D/g, "").slice(0, 5) })}
                 left={<PinIcon className="h-[17px] w-[17px] text-ink3" />}
               />
             </Field>
@@ -127,6 +201,7 @@ export default function ProfilePage() {
               value={value("phone") ?? ""}
               onChange={(v) => setDraft({ ...draft, phone: v })}
               placeholder="+1 (646) 555-0142"
+              type="tel"
             />
           </Field>
 
@@ -180,9 +255,10 @@ export default function ProfilePage() {
         <Card className="flex items-center gap-3 p-5">
           <div className="flex-1">
             <p className="text-[13.5px] font-semibold">
-              {changed.length === 0 ? "No unsaved changes" : `${changed.length} unsaved changes`}
+              {changed.length === 0 ? "No unsaved changes" : `${changed.length} unsaved ${changed.length === 1 ? "change" : "changes"}`}
             </p>
             {changed.length > 0 && <p className="text-[12px] text-ink2">{changed.join(" · ")}</p>}
+            {error && <p className="text-[12px] text-danger">{error}</p>}
           </div>
           <Button variant="ghost" onClick={() => setDraft({})} disabled={changed.length === 0}>
             Discard
@@ -191,9 +267,89 @@ export default function ProfilePage() {
             {saving ? "Saving…" : "Save changes"}
           </Button>
         </Card>
+
+        {/* My listings */}
+        <Card className="flex flex-col gap-4 p-6 md:p-7">
+          <div className="flex items-center">
+            <SectionLabel>MY LISTINGS</SectionLabel>
+            <Link href="/sell" className="ml-auto text-[13px] font-semibold text-deep">
+              Sell an item
+            </Link>
+          </div>
+          {mine.length === 0 ? (
+            <p className="text-[13.5px] text-ink2">Nothing posted yet.</p>
+          ) : (
+            <ul className="flex flex-col">
+              {mine.map((l) => (
+                <ListingRow key={l.id} listing={l} />
+              ))}
+            </ul>
+          )}
+        </Card>
+
+        {/* Saved */}
+        <Card className="flex flex-col gap-4 p-6 md:p-7">
+          <SectionLabel>SAVED ITEMS</SectionLabel>
+          {saved.length === 0 ? (
+            <p className="text-[13.5px] text-ink2">Tap the heart on a listing to keep it here.</p>
+          ) : (
+            <ul className="flex flex-col">
+              {saved.map((l) => (
+                <ListingRow key={l.id} listing={l} />
+              ))}
+            </ul>
+          )}
+        </Card>
+
+        {/* Leaving */}
+        <Card className="flex flex-col gap-4 p-6 md:p-7">
+          <SectionLabel>LEAVING</SectionLabel>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button variant="ghost" onClick={signOut}>
+              Sign out
+            </Button>
+            <Button variant="danger" onClick={deactivate}>
+              Deactivate account
+            </Button>
+            <p className="text-[12px] text-ink3">
+              Deactivating is reversible — signing in with the same Columbia email brings it back.
+            </p>
+          </div>
+        </Card>
       </main>
 
       <MobileTabBar />
     </>
+  );
+}
+
+function ListingRow({ listing }: { listing: ListingCard }) {
+  const tone: Record<ListingCard["status"], string> = {
+    active: "bg-ok/10 text-ok",
+    reserved: "bg-warn/10 text-warn",
+    sold: "bg-muted text-ink2",
+    draft: "bg-muted text-ink2",
+    delisted: "bg-muted text-ink3",
+  };
+  return (
+    <li className="border-t border-line first:border-t-0">
+      <Link href={`/listings/${listing.id}`} className="flex items-center gap-3.5 py-3 hover:bg-muted/60">
+        <span className="photo-placeholder h-12 w-12 shrink-0 overflow-hidden rounded-[9px] bg-muted">
+          {listing.cover_photo_url && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={listing.cover_photo_url} alt="" className="h-full w-full object-cover" />
+          )}
+        </span>
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate text-[14px] font-semibold text-ink">{listing.title}</span>
+          <span className="text-[11.5px] text-ink3">
+            {price(listing.price_cents, listing.is_free)} · {listing.zip_code} · {relativeTime(listing.posted_at)}
+          </span>
+        </span>
+        <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold tracking-[0.02em] ${tone[listing.status]}`}>
+          {STATUS_LABELS[listing.status].toUpperCase()}
+        </span>
+      </Link>
+    </li>
   );
 }

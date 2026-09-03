@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { Logo } from "@/components/Logo";
@@ -28,8 +28,14 @@ function Verify() {
   const [state, setState] = useState<"working" | "ok" | "expired" | "already_used" | "unknown">(
     "working",
   );
+  // The link is single-use, so the request must be too. React runs effects
+  // twice in development; without this guard the second call would report
+  // "already used" on a link that just worked.
+  const started = useRef(false);
 
   useEffect(() => {
+    if (started.current) return;
+    started.current = true;
     const token = params.get("token");
     if (!token) return setState("unknown");
     api

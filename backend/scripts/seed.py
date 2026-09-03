@@ -1,20 +1,21 @@
 """Seed the database with plausible fake data — UX_SPEC.md §9.
 
     python -m scripts.seed --users 1000 --listings 1500 --reset
+    python -m scripts.seed --reset --demo-email you@columbia.edu
 
-Two decisions in here are deliberate and should survive edits:
+Decisions in here that should survive edits:
 
 1.  About 30% of users get no phone number. The email-only contact layout has to
     be exercised by the data, not just by a design state.
-2.  Internal and external listings are generated with the *same* base engagement
-    rates. If the analysis finds a difference between the tiers on seeded data,
-    the difference is an artefact of this file. Do not put a thumb on the scale
-    for the result we are hoping to see.
+2.  Engagement is generated with one base rate for everyone. If the analysis
+    finds an effect on seeded data, the effect is an artefact of this file. Do
+    not put a thumb on the scale for the result we are hoping to see.
 
-Photos are left empty on purpose. The frontend renders the same deterministic
-gradient placeholder the Figma mockups use, so the seeded feed looks like the
-design without depending on an image host. Point `photo_urls` at real files once
-there is somewhere to upload them.
+Every listing has a seller: the external tier was removed on 2026-09-02
+(docs/DECISIONS.md). Photos are left empty on purpose — the frontend renders the
+same deterministic gradient placeholder the Figma mockups use, so the seeded
+feed looks like the design without depending on an image host. Real uploads
+go through POST /photos.
 """
 
 from __future__ import annotations
@@ -23,9 +24,7 @@ import argparse
 import random
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import delete
-
-from app.db import Base, SessionLocal, create_all, engine
+from app.db import SessionLocal, create_all, reset_all
 from app.enums import (
     Category,
     Condition,
@@ -33,10 +32,10 @@ from app.enums import (
     Grade,
     ListingStatus,
     School,
-    Source,
     ViewSurface,
 )
 from app.models import Enquiry, FilterEvent, Listing, ListingView, Save, User
+from app.services import domains
 from app.services.geo import ZIPS
 
 rng = random.Random(20260902)
@@ -130,6 +129,11 @@ TITLES = {
 }
 COLOURS = ["white", "black", "grey", "oak", "navy", "beige"]
 SIZES = ["S", "M", "L", "XL", "42", "9.5"]
+SUBCATEGORY_FOR_TITLE = {
+    "desk": "desks", "chair": "chairs", "mattress": "beds_mattresses",
+    "bookshelf": "storage_shelving", "nightstand": "storage_shelving",
+    "sofa": "sofas_tables", "table": "sofas_tables",
+}
 
 DESCRIPTIONS = [
     "Bought new last year, used for two semesters. Solid, no wobble — one small "
@@ -140,8 +144,6 @@ DESCRIPTIONS = [
     "for a day if you can pick up this week.",
     "Works perfectly, I just upgraded. Original box included. Can meet on campus.",
 ]
-
-EXTERNAL_SOURCES = [Source.EBAY] * 3 + [Source.FACEBOOK] * 3 + [Source.KARROT] * 1
 
 # Two cohort spikes and a summer trough (UX_SPEC.md §9).
 MONTH_WEIGHT = {1: 1.0, 2: 0.8, 3: 0.9, 4: 1.4, 5: 3.0, 6: 0.6, 7: 0.6,
@@ -166,6 +168,16 @@ def _title(category: Category) -> str:
     )
 
 
+def _subcategory(category: Category, title: str) -> str | None:
+    if category is not Category.FURNITURE:
+        return None
+    lower = title.lower()
+    for word, sub in SUBCATEGORY_FOR_TITLE.items():
+        if word in lower:
+            return sub
+    return "sofas_tables"
+
+
 def _posted_at(now: datetime) -> datetime:
     """Weighted by month so May and August spike."""
     for _ in range(50):
@@ -179,96 +191,99 @@ def _posted_at(now: datetime) -> datetime:
 # ---------------------------------------------------------------- seeding
 
 
-def reset(db) -> None:
-    for table in (FilterEvent, Enquiry, Save, ListingView, Listing, User):
-        db.execute(delete(table))
-    db.commit()
+def _make_user(i: int, now: datetime) -> User:
+    username = f"cu_{i:04d}"
+    has_phone = rng.random() > 0.30  # ~30% leave it blank, on purpose
+    return User(
+        email=f"{username}@columbia.edu",
+        username=username,
+        display_name=None,
+        phone=f"+1646555{rng.randint(1000, 9999)}" if has_phone else None,
+        phone_contact_enabled=has_phone and rng.random() > 0.1,
+        nationality=rng.choice(NATIONALITIES),
+        school=rng.choice(SCHOOLS),
+        grade=rng.choice(GRADES),
+        zip_code=rng.choice(ZIPS_POOL),
+        is_verified=True,
+        created_at=now - timedelta(days=rng.randint(1, 700)),
+    )
 
 
-def seed(n_users: int, n_listings: int, do_reset: bool) -> None:
-    create_all()
+def _make_listing(seller: User, now: datetime, *, fresh: bool = False) -> Listing:
+    category = rng.choice(CATEGORY_POOL)
+    price_cents, is_free = _price_cents(category)
+    title = _title(category)
+    posted = now - timedelta(hours=rng.randint(1, 72)) if fresh else _posted_at(now)
+    listing = Listing(
+        seller_id=seller.id,
+        title=title,
+        description=rng.choice(DESCRIPTIONS),
+        category=category,
+        subcategory=_subcategory(category, title),
+        condition=rng.choice(CONDITION_POOL),
+        price_cents=price_cents,
+        is_free=is_free,
+        is_negotiable=rng.random() < 0.45,
+        zip_code=seller.zip_code,
+        status=ListingStatus.ACTIVE,
+        posted_at=posted,
+    )
+    if fresh:
+        return listing
+    # ~35% sell, median about six days; ~5% are reserved.
+    if rng.random() < 0.35:
+        listing.status = ListingStatus.SOLD
+        listing.sold_at = posted + timedelta(days=max(0.2, rng.lognormvariate(1.7, 0.9)))
+        if listing.sold_at > now:
+            listing.status = ListingStatus.ACTIVE
+            listing.sold_at = None
+    elif rng.random() < 0.05:
+        listing.status = ListingStatus.RESERVED
+    return listing
+
+
+def seed(n_users: int, n_listings: int, do_reset: bool, demo_email: str | None = None) -> None:
+    if do_reset:
+        reset_all()
+    else:
+        create_all()
     db = SessionLocal()
     now = datetime.now(timezone.utc)
 
-    if do_reset:
-        reset(db)
-
     # ---- users
-    users: list[User] = []
-    for i in range(n_users):
-        username = f"cu_{i:04d}"
-        has_phone = rng.random() > 0.30  # ~30% leave it blank, on purpose
-        users.append(
-            User(
-                email=f"{username}@columbia.edu",
-                username=username,
-                display_name=None,
-                phone=f"+1646555{rng.randint(1000, 9999)}" if has_phone else None,
-                phone_contact_enabled=has_phone and rng.random() > 0.1,
-                nationality=rng.choice(NATIONALITIES),
-                school=rng.choice(SCHOOLS),
-                grade=rng.choice(GRADES),
-                zip_code=rng.choice(ZIPS_POOL),
-                is_verified=True,
-                created_at=now - timedelta(days=rng.randint(1, 700)),
-            )
+    users = [_make_user(i, now) for i in range(n_users)]
+
+    demo: User | None = None
+    if demo_email:
+        demo_email = domains.normalize(demo_email)
+        if not domains.is_allowed(demo_email):
+            raise SystemExit(domains.rejection_reason(demo_email))
+        demo = User(
+            email=demo_email,
+            username=demo_email.split("@")[0].replace(".", "_")[:20],
+            phone="+16465550142",
+            nationality="IN",
+            school=domains.suggested_school(demo_email) or School.SEAS_GRAD,
+            grade=Grade.GRADUATE,
+            zip_code="10027",
+            is_verified=True,
+            created_at=now - timedelta(days=30),
         )
+        users.append(demo)
+
     db.add_all(users)
     db.commit()
 
     # ---- listings
-    n_external = int(n_listings * 0.10)
-    listings: list[Listing] = []
-
-    for i in range(n_listings):
-        is_external = i < n_external
-        category = rng.choice(CATEGORY_POOL)
-        price_cents, is_free = _price_cents(category)
-        posted = _posted_at(now)
-        seller = None if is_external else rng.choice(users)
-        source = rng.choice(EXTERNAL_SOURCES) if is_external else Source.INTERNAL
-
-        listing = Listing(
-            seller_id=seller.id if seller else None,
-            source=source,
-            title=_title(category),
-            description=rng.choice(DESCRIPTIONS) if not is_external else None,
-            category=category,
-            subcategory=(
-                rng.choice(["desks", "chairs", "beds_mattresses", "storage_shelving", "sofas_tables"])
-                if category is Category.FURNITURE
-                else None
-            ),
-            condition=rng.choice(CONDITION_POOL),
-            price_cents=price_cents,
-            is_free=is_free,
-            is_negotiable=rng.random() < 0.45,
-            zip_code=seller.zip_code if seller else rng.choice(ZIPS_POOL),
-            status=ListingStatus.ACTIVE,
-            posted_at=posted,
-            external_url=(
-                f"https://example.com/{source.value}/{i}" if is_external else None
-            ),
-        )
-
-        # ~35% of internal listings sell, median about six days.
-        if not is_external and rng.random() < 0.35:
-            listing.status = ListingStatus.SOLD
-            listing.sold_at = posted + timedelta(days=max(0.2, rng.lognormvariate(1.7, 0.9)))
-            if listing.sold_at > now:
-                listing.status = ListingStatus.ACTIVE
-                listing.sold_at = None
-        elif not is_external and rng.random() < 0.05:
-            listing.status = ListingStatus.RESERVED
-
-        listings.append(listing)
-
+    listings = [_make_listing(rng.choice(users), now) for _ in range(n_listings)]
+    if demo is not None:
+        listings.extend(_make_listing(demo, now, fresh=True) for _ in range(3))
     db.add_all(listings)
     db.commit()
 
     # ---- events
-    # Identical base rates for both tiers. Any difference the analysis finds
-    # must come from the data, not from this generator.
+    # One base rate for everyone. Any difference the analysis finds must come
+    # from the data, not from this generator.
     views, saves, enquiries, filter_events = [], [], [], []
     for listing in listings:
         age_days = max(1, (now - listing.posted_at.replace(tzinfo=timezone.utc)).days)
@@ -282,6 +297,7 @@ def seed(n_users: int, n_listings: int, do_reset: bool) -> None:
                     listing_id=listing.id,
                     viewer_id=viewer.id,
                     surface=rng.choice([ViewSurface.FEED, ViewSurface.SEARCH, ViewSurface.DETAIL]),
+                    badges_shown=True,
                     viewed_at=listing.posted_at + timedelta(hours=rng.randint(0, 24 * min(age_days, 30))),
                 )
             )
@@ -295,10 +311,9 @@ def seed(n_users: int, n_listings: int, do_reset: bool) -> None:
         listing.enquiry_count = n_enq
         for _ in range(n_enq):
             buyer = rng.choice(users)
-            seller_can_sms = listing.seller is not None and listing.seller.can_receive_sms
             channel = (
                 EnquiryChannel.SMS
-                if seller_can_sms and rng.random() < 0.35
+                if listing.seller.can_receive_sms and rng.random() < 0.35
                 else EnquiryChannel.EMAIL
             )
             enquiries.append(Enquiry(listing_id=listing.id, buyer_id=buyer.id, channel=channel))
@@ -330,9 +345,11 @@ def seed(n_users: int, n_listings: int, do_reset: bool) -> None:
     print(
         f"Seeded {len(users)} users "
         f"({sum(1 for u in users if u.phone is None)} without a phone number), "
-        f"{len(listings)} listings ({n_external} external), "
-        f"{len(views)} views, {len(saves)} saves, {len(enquiries)} enquiries."
+        f"{len(listings)} listings, {len(views)} views, {len(saves)} saves, "
+        f"{len(enquiries)} enquiries."
     )
+    if demo is not None:
+        print(f"Demo account: {demo.email} (@{demo.username}) — sign in with a link from /signin.")
     db.close()
 
 
@@ -340,8 +357,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--users", type=int, default=1000)
     parser.add_argument("--listings", type=int, default=1500)
-    parser.add_argument("--reset", action="store_true", help="empty the tables first")
+    parser.add_argument("--reset", action="store_true", help="drop and recreate every table first")
+    parser.add_argument("--demo-email", help="also create an account for this Columbia address")
     args = parser.parse_args()
 
-    Base.metadata.create_all(engine)
-    seed(args.users, args.listings, args.reset)
+    seed(args.users, args.listings, args.reset, args.demo_email)

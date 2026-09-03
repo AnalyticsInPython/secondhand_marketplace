@@ -1,53 +1,48 @@
-"""The feed, the detail page and posting — UX_SPEC.md §6.3 to §6.5."""
+"""The feed, the detail page and posting — UX_SPEC.md §6.3 to §6.5.
+
+Thin on purpose: filtering, counting and serialising live in services/feed.py
+so the page and the sidebar can never disagree.
+"""
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, or_
-from sqlalchemy.orm import Session as DbSession, aliased
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session as DbSession
 
 from ..config import settings
 from ..db import get_db
 from ..enums import (
-    CATEGORY_LABELS,
-    CONDITION_LABELS,
     Category,
     Condition,
     EnquiryChannel,
     ListingStatus,
-    Source,
     SortOrder,
     ViewSurface,
+    subcategory_belongs_to,
 )
-from ..models import Enquiry, FilterEvent, Listing, ListingPhoto, ListingView, Save, User
+from ..models import Enquiry, FilterEvent, Listing, ListingPhoto, ListingView, Save, Upload, User
 from ..schemas import (
     EnquiryIn,
     EnquiryOut,
-    FacetCount,
     FacetCounts,
-    ListingCard,
     ListingCreate,
     ListingDetail,
     ListingPage,
+    ListingUpdate,
 )
 from ..security import current_user, current_user_optional
-from ..services import geo
-from ..services.badges import badges_for, public_seller
+from ..services import feed, geo
 
 router = APIRouter(prefix="/listings", tags=["listings"])
 
-Seller = aliased(User)
+
+# ---------------------------------------------------------------- helpers
 
 
-# ---------------------------------------------------------------- filtering
-
-
-def _filtered(
-    db: DbSession,
-    viewer: User | None,
-    *,
+def _filters(
     q: str | None,
     category: list[Category],
     subcategory: list[str],
@@ -58,80 +53,98 @@ def _filtered(
     same_zip: bool,
     same_nationality: bool,
     same_school: bool,
-    source: list[Source],
-):
-    """One place where every filter is expressed, so the feed and the facet
-    counts can never disagree about what a filter means."""
-    query = (
-        db.query(Listing, Seller)
-        .outerjoin(Seller, Listing.seller_id == Seller.id)
-        .filter(Listing.status.in_([ListingStatus.ACTIVE, ListingStatus.RESERVED]))
+) -> feed.FeedFilters:
+    if radius_mi is not None:
+        radius_mi = min(max(radius_mi, settings.min_radius_mi), settings.max_radius_mi)
+    return feed.FeedFilters(
+        q=q.strip() if q and q.strip() else None,
+        category=tuple(category),
+        subcategory=tuple(subcategory),
+        condition=tuple(condition),
+        price_min_cents=price_min_cents,
+        price_max_cents=price_max_cents,
+        radius_mi=radius_mi,
+        same_zip=same_zip,
+        same_nationality=same_nationality,
+        same_school=same_school,
     )
 
-    if q:
-        like = f"%{q.strip()}%"
-        query = query.filter(or_(Listing.title.ilike(like), Listing.description.ilike(like)))
-    if category:
-        query = query.filter(Listing.category.in_(category))
-    if subcategory:
-        query = query.filter(Listing.subcategory.in_(subcategory))
-    if condition:
-        query = query.filter(Listing.condition.in_(condition))
-    if price_min_cents is not None:
-        query = query.filter(Listing.price_cents >= price_min_cents)
-    if price_max_cents is not None:
-        query = query.filter(Listing.price_cents <= price_max_cents)
-    if source:
-        query = query.filter(Listing.source.in_(source))
 
-    # Radius. Resolved to a ZIP list rather than a per-row distance calculation,
-    # so the database can still use its index on listings.zip_code.
-    if radius_mi is not None and viewer is not None:
-        query = query.filter(Listing.zip_code.in_(geo.zips_within(viewer.zip_code, radius_mi)))
-
-    # Trust filters. Each one implicitly excludes external listings, because an
-    # aggregated eBay item has no seller to share anything with. That is the
-    # intended behaviour, not a bug: "same country" means a person.
-    if viewer is not None:
-        if same_zip:
-            query = query.filter(Listing.zip_code == viewer.zip_code)
-        if same_nationality:
-            query = query.filter(Seller.nationality == viewer.nationality)
-        if same_school:
-            query = query.filter(Seller.school == viewer.school)
-
-    return query
+def _own_listing(db: DbSession, listing_id: str, user: User) -> Listing:
+    listing = db.get(Listing, listing_id)
+    if listing is None or listing.seller_id != user.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such listing")
+    return listing
 
 
-def to_card(listing: Listing, seller: User | None, viewer: User | None) -> ListingCard:
-    return ListingCard(
-        id=listing.id,
-        title=listing.title,
-        price_cents=listing.price_cents,
-        is_free=listing.is_free,
-        condition=listing.condition,
-        category=listing.category,
-        subcategory=listing.subcategory,
-        zip_code=listing.zip_code,
-        distance_mi=geo.distance_mi(viewer.zip_code, listing.zip_code) if viewer else None,
-        posted_at=listing.posted_at,
-        status=listing.status,
-        cover_photo_url=listing.cover_photo_url,
-        badges=badges_for(viewer, seller),
-        is_external=listing.is_external,
-        source=listing.source,
-        source_label=listing.source.label(),
-    )
+def _relative(url: str) -> str:
+    """Accept the absolute URL the upload endpoint returned, store it relative."""
+    origin = settings.public_origin.rstrip("/")
+    return url[len(origin) :] if url.startswith(origin + "/") else url
+
+
+def _attach_photos(db: DbSession, user: User, listing: Listing, urls: list[str]) -> None:
+    """Replace the listing's photos with `urls`, in order. Position 0 is the cover.
+
+    Every URL must be one of this member's own uploads (or already on this
+    listing), so nobody can post with somebody else's picture or with an
+    arbitrary address.
+    """
+    wanted: list[str] = []
+    for u in urls:
+        rel = _relative(u)
+        if rel not in wanted:
+            wanted.append(rel)
+    wanted = wanted[: settings.max_photos_per_listing]
+
+    current = {p.url for p in listing.photos}
+    uploads: dict[str, Upload] = {}
+    for rel in wanted:
+        if rel in current:
+            continue
+        upload = db.scalar(
+            select(Upload).where(Upload.url == rel, Upload.user_id == user.id, Upload.listing_id.is_(None))
+        )
+        if upload is None:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "One of the photos was not uploaded by you. Add it again from the form.",
+            )
+        uploads[rel] = upload
+
+    # The (listing, position) pair is unique, so reorder by clearing first.
+    old = {p.url: p for p in listing.photos}
+    for photo in list(listing.photos):
+        db.delete(photo)
+    db.flush()
+
+    for position, rel in enumerate(wanted):
+        prior = old.get(rel)
+        upload = uploads.get(rel)
+        db.add(
+            ListingPhoto(
+                listing_id=listing.id,
+                url=rel,
+                position=position,
+                width=prior.width if prior else upload.width if upload else None,
+                height=prior.height if prior else upload.height if upload else None,
+            )
+        )
+        if upload is not None:
+            upload.listing_id = listing.id
+    db.flush()
+    db.expire(listing, ["photos"])
 
 
 # ---------------------------------------------------------------- routes
-# Declared before /{listing_id} so "facets" is not read as an id.
+# Static paths first, so "facets" and "events" are never read as an id.
 
 
 @router.get("/facets", response_model=FacetCounts)
 def facets(
     q: str | None = None,
     category: list[Category] = Query(default=[]),
+    subcategory: list[str] = Query(default=[]),
     condition: list[Condition] = Query(default=[]),
     price_min_cents: int | None = None,
     price_max_cents: int | None = None,
@@ -139,55 +152,39 @@ def facets(
     same_zip: bool = False,
     same_nationality: bool = False,
     same_school: bool = False,
+    viewer: User = Depends(current_user),
+    db: DbSession = Depends(get_db),
+):
+    """Every number in the filter sidebar. Same parameters as GET /listings."""
+    f = _filters(
+        q, category, subcategory, condition, price_min_cents, price_max_cents,
+        radius_mi, same_zip, same_nationality, same_school,
+    )
+    return feed.facets(db, viewer, f)
+
+
+@router.post("/events/filter", status_code=status.HTTP_204_NO_CONTENT)
+def log_filter_event(
+    filter_key: str = Query(max_length=40),
+    result_count: int = 0,
+    value: str | None = Query(default=None, max_length=80),
     viewer: User | None = Depends(current_user_optional),
     db: DbSession = Depends(get_db),
 ):
-    """Every number in the filter sidebar.
+    """Called on every toggle and every slider release.
 
-    Each count is "what you would get if you turned this one filter on, with
-    everything else you have already chosen still applied". The counts move as
-    filters change, and that is the whole point — the trade between trust and
-    selection is never hidden. Do not cache these.
+    This is the table that answers "which of the filters is doing the work", and
+    it cannot be reconstructed after the fact — so log eagerly and prune later.
     """
-    common = dict(
-        q=q,
-        subcategory=[],
-        price_min_cents=price_min_cents,
-        price_max_cents=price_max_cents,
-        radius_mi=radius_mi,
-        source=[],
-    )
-
-    def count(**overrides) -> int:
-        params = dict(
-            category=category,
-            condition=condition,
-            same_zip=same_zip,
-            same_nationality=same_nationality,
-            same_school=same_school,
-            **common,
+    db.add(
+        FilterEvent(
+            user_id=viewer.id if viewer else None,
+            filter_key=filter_key,
+            value=value,
+            result_count=max(0, result_count),
         )
-        params.update(overrides)
-        return _filtered(db, viewer, **params).count()
-
-    return FacetCounts(
-        total=count(),
-        categories=[
-            FacetCount(key=c.value, label=CATEGORY_LABELS[c], count=count(category=[c]))
-            for c in Category
-        ],
-        conditions=[
-            FacetCount(key=c.value, label=CONDITION_LABELS[c], count=count(condition=[c]))
-            for c in Condition
-        ],
-        same_zip=count(same_zip=True),
-        same_nationality=count(same_nationality=True),
-        same_school=count(same_school=True),
-        radius_steps=[
-            FacetCount(key=str(step), label=f"{step} mi", count=count(radius_mi=step))
-            for step in (0.5, 1, 2.5, 5, 10)
-        ],
     )
+    db.commit()
 
 
 @router.get("", response_model=ListingPage)
@@ -202,88 +199,29 @@ def list_listings(
     same_zip: bool = False,
     same_nationality: bool = False,
     same_school: bool = False,
-    source: list[Source] = Query(default=[]),
-    sort: SortOrder = SortOrder.NEWEST,
-    limit: int = Query(default=24, le=100),
-    offset: int = 0,
-    viewer: User | None = Depends(current_user_optional),
+    sort: SortOrder | None = None,
+    limit: int = Query(default=24, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    viewer: User = Depends(current_user),
     db: DbSession = Depends(get_db),
 ):
-    query = _filtered(
-        db,
-        viewer,
-        q=q,
-        category=category,
-        subcategory=subcategory,
-        condition=condition,
-        price_min_cents=price_min_cents,
-        price_max_cents=price_max_cents,
-        radius_mi=radius_mi,
-        same_zip=same_zip,
-        same_nationality=same_nationality,
-        same_school=same_school,
-        source=source,
+    """The feed. Every card carries `distance_mi` and `badges[]` already
+    computed for the viewer; the client never sees a seller's raw attributes."""
+    f = _filters(
+        q, category, subcategory, condition, price_min_cents, price_max_cents,
+        radius_mi, same_zip, same_nationality, same_school,
     )
-    total = query.count()
+    rows, total, _ = feed.page(db, viewer, f, sort=sort, limit=limit, offset=offset)
 
-    if sort is SortOrder.CLOSEST:
-        # Distance is not a column — it depends on who is asking. At pilot scale
-        # sorting in Python is honest and fast enough. If this ever gets slow,
-        # the fix is a materialised zip-distance table, not a subquery.
-        rows = query.all()
-        rows.sort(key=lambda r: (geo.distance_mi(viewer.zip_code, r[0].zip_code) if viewer else 0) or 999)
-        rows = rows[offset : offset + limit]
-    else:
-        order = {
-            SortOrder.NEWEST: Listing.posted_at.desc(),
-            SortOrder.PRICE_ASC: Listing.price_cents.asc(),
-            SortOrder.PRICE_DESC: Listing.price_cents.desc(),
-            SortOrder.MOST_SAVED: Listing.save_count.desc(),
-        }[sort]
-        rows = query.order_by(order).offset(offset).limit(limit).all()
-
+    show_badges = feed.badge_treatment()
+    feed.log_impressions(
+        db, viewer, [listing for listing, _ in rows],
+        ViewSurface.SEARCH if f.q else ViewSurface.FEED, show_badges,
+    )
     return ListingPage(
-        items=[to_card(listing, seller, viewer) for listing, seller in rows],
+        items=[feed.to_card(listing, seller, viewer, show_badges=show_badges) for listing, seller in rows],
         total=total,
         next_cursor=str(offset + limit) if offset + limit < total else None,
-    )
-
-
-@router.get("/{listing_id}", response_model=ListingDetail)
-def get_listing(
-    listing_id: str,
-    viewer: User | None = Depends(current_user_optional),
-    db: DbSession = Depends(get_db),
-):
-    listing = db.get(Listing, listing_id)
-    if listing is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such listing")
-    seller = listing.seller
-
-    db.add(ListingView(listing_id=listing.id, viewer_id=viewer.id if viewer else None, surface=ViewSurface.DETAIL))
-    listing.view_count += 1
-    db.commit()
-
-    is_saved = False
-    if viewer:
-        is_saved = (
-            db.query(Save).filter(Save.listing_id == listing.id, Save.user_id == viewer.id).first()
-            is not None
-        )
-
-    card = to_card(listing, seller, viewer)
-    return ListingDetail(
-        **card.model_dump(),
-        description=listing.description,
-        is_negotiable=listing.is_negotiable,
-        photo_urls=[p.url for p in listing.photos],
-        view_count=listing.view_count,
-        save_count=listing.save_count,
-        enquiry_count=listing.enquiry_count,
-        external_url=listing.external_url,
-        seller=public_seller(viewer, seller),
-        is_saved=is_saved,
-        is_owner=bool(viewer and seller and viewer.id == seller.id),
     )
 
 
@@ -300,21 +238,15 @@ def create_listing(
     """
     if not geo.is_supported(payload.zip_code):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Pickup ZIP must be in the NYC metro")
-    if not payload.is_free and payload.price_cents <= 0:
-        raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
-            'Enter a price, or tick "give it away for free". $0 on its own is ambiguous to buyers.',
-        )
 
     listing = Listing(
         seller_id=user.id,
-        source=Source.INTERNAL,
         title=payload.title,
         description=payload.description,
         category=payload.category,
         subcategory=payload.subcategory,
         condition=payload.condition,
-        price_cents=0 if payload.is_free else payload.price_cents,
+        price_cents=payload.price_cents,
         is_free=payload.is_free,
         is_negotiable=payload.is_negotiable,
         zip_code=payload.zip_code,
@@ -322,19 +254,84 @@ def create_listing(
     )
     db.add(listing)
     db.flush()
-    for i, url in enumerate(payload.photo_urls[: settings.max_photos_per_listing]):
-        db.add(ListingPhoto(listing_id=listing.id, url=url, position=i))
+    _attach_photos(db, user, listing, payload.photo_urls)
     db.commit()
+    db.refresh(listing)
+    return feed.to_detail(db, listing, user)
 
-    return get_listing(listing.id, viewer=user, db=db)
+
+@router.get("/{listing_id}", response_model=ListingDetail)
+def get_listing(
+    listing_id: str,
+    viewer: User = Depends(current_user),
+    db: DbSession = Depends(get_db),
+):
+    listing = db.get(Listing, listing_id)
+    if listing is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such listing")
+    is_owner = listing.seller_id == viewer.id
+    if listing.status in (ListingStatus.DELISTED, ListingStatus.DRAFT) and not is_owner:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such listing")
+
+    if not is_owner:
+        db.add(ListingView(listing_id=listing.id, viewer_id=viewer.id, surface=ViewSurface.DETAIL))
+        listing.view_count += 1
+        db.commit()
+
+    return feed.to_detail(db, listing, viewer)
+
+
+@router.patch("/{listing_id}", response_model=ListingDetail)
+def update_listing(
+    listing_id: str,
+    payload: ListingUpdate,
+    user: User = Depends(current_user),
+    db: DbSession = Depends(get_db),
+):
+    """Edit, mark sold, reserve, relist or delist. Owner only."""
+    listing = _own_listing(db, listing_id, user)
+    data = payload.model_dump(exclude_unset=True)
+
+    if "zip_code" in data and not geo.is_supported(data["zip_code"]):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Pickup ZIP must be in the NYC metro")
+
+    category = data.get("category", listing.category)
+    subcategory = data["subcategory"] if "subcategory" in data else listing.subcategory
+    if "category" in data and "subcategory" not in data and not subcategory_belongs_to(subcategory, category):
+        subcategory = None  # the old subcategory does not fit the new category
+    if not subcategory_belongs_to(subcategory, category):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"{subcategory!r} is not a {category.label()} subcategory")
+
+    is_free = data.get("is_free", listing.is_free)
+    price = data.get("price_cents", listing.price_cents)
+    if is_free:
+        price = 0
+    elif price <= 0:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, 'Enter a price, or tick "give it away for free".')
+
+    photo_urls = data.pop("photo_urls", None)
+    new_status = data.pop("status", None)
+    data.update(category=category, subcategory=subcategory, is_free=is_free, price_cents=price)
+    for key, value in data.items():
+        setattr(listing, key, value)
+
+    if photo_urls is not None:
+        _attach_photos(db, user, listing, photo_urls)
+
+    if new_status is not None and new_status != listing.status:
+        listing.status = new_status
+        # sold_at is the event the whole analysis counts (UX_SPEC.md §4.2).
+        listing.sold_at = datetime.now(timezone.utc) if new_status is ListingStatus.SOLD else None
+
+    db.commit()
+    db.refresh(listing)
+    return feed.to_detail(db, listing, user)
 
 
 @router.post("/{listing_id}/sold", status_code=status.HTTP_204_NO_CONTENT)
 def mark_sold(listing_id: str, user: User = Depends(current_user), db: DbSession = Depends(get_db)):
-    """The event the whole analysis counts."""
-    listing = db.get(Listing, listing_id)
-    if listing is None or listing.seller_id != user.id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such listing")
+    """Shorthand for PATCH {status: sold} — the event the whole analysis counts."""
+    listing = _own_listing(db, listing_id, user)
     listing.status = ListingStatus.SOLD
     listing.sold_at = datetime.now(timezone.utc)
     db.commit()
@@ -343,9 +340,9 @@ def mark_sold(listing_id: str, user: User = Depends(current_user), db: DbSession
 @router.post("/{listing_id}/save", status_code=status.HTTP_204_NO_CONTENT)
 def save_listing(listing_id: str, user: User = Depends(current_user), db: DbSession = Depends(get_db)):
     listing = db.get(Listing, listing_id)
-    if listing is None:
+    if listing is None or listing.status in (ListingStatus.DELISTED, ListingStatus.DRAFT):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No such listing")
-    existing = db.query(Save).filter(Save.listing_id == listing_id, Save.user_id == user.id).first()
+    existing = db.scalar(select(Save).where(Save.listing_id == listing_id, Save.user_id == user.id))
     if existing is None:
         db.add(Save(listing_id=listing_id, user_id=user.id))
         listing.save_count += 1
@@ -354,7 +351,7 @@ def save_listing(listing_id: str, user: User = Depends(current_user), db: DbSess
 
 @router.delete("/{listing_id}/save", status_code=status.HTTP_204_NO_CONTENT)
 def unsave_listing(listing_id: str, user: User = Depends(current_user), db: DbSession = Depends(get_db)):
-    existing = db.query(Save).filter(Save.listing_id == listing_id, Save.user_id == user.id).first()
+    existing = db.scalar(select(Save).where(Save.listing_id == listing_id, Save.user_id == user.id))
     if existing is not None:
         listing = db.get(Listing, listing_id)
         if listing and listing.save_count > 0:
@@ -377,45 +374,31 @@ def start_enquiry(
     was merely *viewed* never carried them.
     """
     listing = db.get(Listing, listing_id)
-    if listing is None or listing.seller is None:
+    if listing is None or listing.status in (ListingStatus.DELISTED, ListingStatus.DRAFT):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No such listing")
     if listing.status is ListingStatus.SOLD:
         raise HTTPException(status.HTTP_409_CONFLICT, "This item is sold")
+    if listing.seller_id == user.id:
+        raise HTTPException(status.HTTP_409_CONFLICT, "This is your own listing")
+
+    # A modest ceiling. The reveal is the measurement, and also the only thing
+    # worth scraping.
+    since = datetime.now(timezone.utc) - timedelta(hours=1)
+    recent = db.scalar(
+        select(func.count(Enquiry.id)).where(Enquiry.buyer_id == user.id, Enquiry.created_at >= since)
+    ) or 0
+    if recent >= settings.enquiries_per_hour:
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Too many contact requests. Try again later.")
 
     seller = listing.seller
-    channel = EnquiryChannel(payload.channel)
-    if channel is EnquiryChannel.SMS and not seller.can_receive_sms:
+    if payload.channel is EnquiryChannel.SMS and not seller.can_receive_sms:
         # The frontend should not have offered the button; refuse anyway.
         raise HTTPException(status.HTTP_409_CONFLICT, "This seller has no number on file")
 
-    db.add(Enquiry(listing_id=listing.id, buyer_id=user.id, channel=channel))
+    db.add(Enquiry(listing_id=listing.id, buyer_id=user.id, channel=payload.channel))
     listing.enquiry_count += 1
     db.commit()
 
-    if channel is EnquiryChannel.EMAIL:
-        return EnquiryOut(channel=channel.value, address=seller.email)
-    return EnquiryOut(channel=channel.value, phone=seller.phone)
-
-
-@router.post("/events/filter", status_code=status.HTTP_204_NO_CONTENT)
-def log_filter_event(
-    filter_key: str,
-    result_count: int,
-    value: str | None = None,
-    viewer: User | None = Depends(current_user_optional),
-    db: DbSession = Depends(get_db),
-):
-    """Called on every toggle and every slider release.
-
-    This is the table that answers "which of the filters is doing the work", and
-    it cannot be reconstructed after the fact — so log eagerly and prune later.
-    """
-    db.add(
-        FilterEvent(
-            user_id=viewer.id if viewer else None,
-            filter_key=filter_key,
-            value=value,
-            result_count=result_count,
-        )
-    )
-    db.commit()
+    if payload.channel is EnquiryChannel.EMAIL:
+        return EnquiryOut(channel=payload.channel, address=seller.email)
+    return EnquiryOut(channel=payload.channel, phone=seller.phone)

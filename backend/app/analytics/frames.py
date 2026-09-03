@@ -43,13 +43,17 @@ def load() -> dict[str, pd.DataFrame]:
     )
     listings = listings.merge(seller_cols, on="seller_id", how="left")
 
-    listings["is_internal"] = listings["source"].eq("internal")
     listings["price_usd"] = listings["price_cents"] / 100
     listings["posted_at"] = pd.to_datetime(listings["posted_at"], utc=True, errors="coerce")
     listings["sold_at"] = pd.to_datetime(listings["sold_at"], utc=True, errors="coerce")
     listings["days_to_sell"] = (listings["sold_at"] - listings["posted_at"]).dt.total_seconds() / 86400
 
-    for frame, col in ((views, "viewed_at"), (enquiries, "created_at"), (saves, "created_at"), (filter_events, "created_at")):
+    for frame, col in (
+        (views, "viewed_at"),
+        (enquiries, "created_at"),
+        (saves, "created_at"),
+        (filter_events, "created_at"),
+    ):
         if not frame.empty:
             frame[col] = pd.to_datetime(frame[col], utc=True, errors="coerce")
 

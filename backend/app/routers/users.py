@@ -1,16 +1,18 @@
-"""Profile & account — UX_SPEC.md §6.6."""
+"""Profile & account — UX_SPEC.md §6.6, plus the two lists behind the avatar
+menu: my listings and saved items."""
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session as DbSession
+from sqlalchemy import select
+from sqlalchemy.orm import Session as DbSession, selectinload
 
 from ..db import get_db
 from ..enums import UserStatus
-from ..models import User
-from ..schemas import MeOut, ProfileUpdate
+from ..models import Listing, Save, User
+from ..schemas import ListingCard, MeOut, ProfileUpdate
 from ..security import current_user
-from ..services import geo
+from ..services import feed, geo
 
 router = APIRouter(prefix="/me", tags=["profile"])
 
@@ -44,12 +46,6 @@ def update_profile(
         if clash is not None:
             raise HTTPException(status.HTTP_409_CONFLICT, "That username is taken")
 
-    if "nationality" in data and data["nationality"]:
-        data["nationality"] = data["nationality"].upper()
-
-    if "phone" in data and not data["phone"]:
-        data["phone"] = None  # explicit clear
-
     for key, value in data.items():
         setattr(user, key, value)
     db.commit()
@@ -58,6 +54,31 @@ def update_profile(
 
 @router.post("/deactivate", status_code=status.HTTP_204_NO_CONTENT)
 def deactivate(user: User = Depends(current_user), db: DbSession = Depends(get_db)):
-    """Reversible: signing in with the same Columbia email brings it back."""
+    """Reversible: signing in with the same Columbia email brings it back.
+    Listings stay but drop out of the feed with the account."""
     user.status = UserStatus.DEACTIVATED
     db.commit()
+
+
+@router.get("/listings", response_model=list[ListingCard])
+def my_listings(user: User = Depends(current_user), db: DbSession = Depends(get_db)):
+    """Everything I have posted, every status, newest first."""
+    rows = db.scalars(
+        select(Listing)
+        .where(Listing.seller_id == user.id)
+        .options(selectinload(Listing.photos))
+        .order_by(Listing.posted_at.desc())
+    ).all()
+    return [feed.to_card(listing, user, user) for listing in rows]
+
+
+@router.get("/saved", response_model=list[ListingCard])
+def saved_listings(user: User = Depends(current_user), db: DbSession = Depends(get_db)):
+    rows = db.execute(
+        select(Listing, Save.created_at)
+        .join(Save, Save.listing_id == Listing.id)
+        .where(Save.user_id == user.id)
+        .options(selectinload(Listing.photos), selectinload(Listing.seller))
+        .order_by(Save.created_at.desc())
+    ).all()
+    return [feed.to_card(listing, listing.seller, user) for listing, _ in rows]

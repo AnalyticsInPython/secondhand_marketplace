@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { Logo } from "@/components/Logo";
 import { Button, Card, Field, Input, MailIcon, ShieldIcon } from "@/components/ui";
 import { api } from "@/lib/api";
+import { DOMAIN_ERROR, isAllowedEmail } from "@/lib/domains";
 
 /**
  * Sign in — UX_SPEC.md §6.2. There is no password anywhere in this product.
@@ -16,9 +17,10 @@ export default function SignInPage() {
   const [sent, setSent] = useState(false);
   const [devLink, setDevLink] = useState<string | null>(null);
   const [wait, setWait] = useState(0);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const valid = /^[^@]+@columbia\.edu$/i.test(email);
+  const valid = isAllowedEmail(email);
 
   // Resend stays locked for a minute — long enough for the first mail to
   // arrive, short enough that a stuck user is not stranded.
@@ -30,13 +32,16 @@ export default function SignInPage() {
 
   async function send() {
     setError(null);
+    setBusy(true);
     try {
-      const res = await api.requestLink(email);
-      setSent(res.sent);
+      const res = await api.requestLink(email.trim());
+      setSent(true);
       setDevLink(res.dev_link);
       setWait(res.resend_available_in_seconds);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -56,15 +61,12 @@ export default function SignInPage() {
             </p>
           </div>
 
-          <Field
-            label="Columbia email"
-            error={email && !valid ? "Columbia Market is @columbia.edu only." : undefined}
-          >
+          <Field label="Columbia email" error={email && !valid ? DOMAIN_ERROR : undefined}>
             <Input
               value={email}
               onChange={setEmail}
               type="email"
-              placeholder="you@columbia.edu"
+              placeholder="uni1234@columbia.edu"
               state={!email ? "default" : valid ? "ok" : "error"}
               left={<MailIcon className="h-[17px] w-[17px] text-deep" />}
               right={valid ? <ShieldIcon className="h-4 w-4 text-ok" /> : undefined}
@@ -75,24 +77,42 @@ export default function SignInPage() {
             <div className="flex flex-col gap-3 rounded-[12px] border border-light bg-tint p-5">
               <p className="text-[16px] font-bold text-deep">Check your Columbia inbox</p>
               <p className="text-[12.5px] leading-[19px] text-ink2">
-                The link works once and expires in 15 minutes.
+                The link works once and expires in 15 minutes. Nothing arriving? Check Spam, and
+                if you have never signed up, the address has no account yet —{" "}
+                <a href="/signup" className="font-semibold text-deep">
+                  create one
+                </a>
+                .
               </p>
               {devLink && (
-                <a href={devLink} className="break-all text-[12px] font-semibold text-deep">
-                  {devLink}
-                </a>
+                <div className="flex flex-col gap-1 rounded-[10px] border border-dashed border-light bg-surface p-3">
+                  <p className="text-[10.5px] font-semibold tracking-[0.06em] text-ink3">
+                    DEVELOPMENT MODE · THE LINK WE WOULD HAVE EMAILED
+                  </p>
+                  <a href={devLink} className="break-all text-[12.5px] font-semibold text-deep">
+                    Open the sign-in link
+                  </a>
+                </div>
               )}
-              <Button variant="ghost" disabled={wait > 0} onClick={send}>
+              <Button variant="ghost" disabled={wait > 0 || busy} onClick={send}>
                 {wait > 0 ? `Resend available in 0:${String(wait).padStart(2, "0")}` : "Resend the link"}
               </Button>
             </div>
           ) : (
-            <Button full disabled={!valid} onClick={send}>
-              Email me a sign-in link
+            <Button full disabled={!valid || busy} onClick={send}>
+              {busy ? "Sending…" : "Email me a sign-in link"}
             </Button>
           )}
 
           {error && <p className="text-[13px] text-danger">{error}</p>}
+
+          <div className="flex items-start gap-2.5 rounded-[12px] bg-muted p-4 text-[12.5px] leading-[18px] text-ink2">
+            <ShieldIcon className="mt-0.5 h-4 w-4 shrink-0 text-ink3" />
+            <span>
+              The link works once and expires after 15 minutes. Only Columbia addresses — columbia.edu,
+              gsb, cumc and tc — are accepted.
+            </span>
+          </div>
 
           <p className="text-center text-[14px] text-ink2">
             New to Columbia Market?{" "}

@@ -1,11 +1,11 @@
 """Sessions and magic links — UX_SPEC.md §6.2.
 
 There is no password anywhere in this product. A sign-in is: prove you can open
-an @columbia.edu inbox, once, within fifteen minutes.
+a Columbia inbox, once, within fifteen minutes.
 
 Tokens and session ids are opaque random strings stored in the database rather
 than signed blobs, because both need to be *revocable*: a link must stop working
-the instant it is used, and "send a new link" must drop the old session.
+the instant it is used, and "sign out" must drop the session for good.
 """
 
 from __future__ import annotations
@@ -63,7 +63,7 @@ def seconds_until_resend(db: DbSession, user: User) -> int:
 
 
 class LinkError(Exception):
-    """The two ways a link fails, kept apart because the UI says different
+    """The ways a link fails, kept apart because the UI says different
     things for each (states B9 and B10)."""
 
     def __init__(self, reason: str):
@@ -80,11 +80,15 @@ def consume_login_token(db: DbSession, raw_token: str) -> User:
     if _aware(token.expires_at) < _now():
         raise LinkError("expired")
 
-    token.used_at = _now()
     user = db.get(User, token.user_id)
     if user is None:
         raise LinkError("unknown")
+
+    token.used_at = _now()
     user.is_verified = True
+    # Deactivation is reversible: signing in with the same Columbia email
+    # brings the account back (UX_SPEC.md §6.6).
+    user.status = UserStatus.ACTIVE
     db.commit()
     return user
 
@@ -105,8 +109,9 @@ def start_session(db: DbSession, user: User, response: Response) -> Session:
         session.id,
         httponly=True,
         samesite="lax",
+        secure=settings.cookie_secure,
         max_age=settings.session_ttl_days * 86400,
-        # Set secure=True behind HTTPS in deployment.
+        path="/",
     )
     return session
 
@@ -117,7 +122,7 @@ def end_session(db: DbSession, session_id: str | None, response: Response) -> No
         if existing:
             db.delete(existing)
             db.commit()
-    response.delete_cookie(SESSION_COOKIE)
+    response.delete_cookie(SESSION_COOKIE, path="/")
 
 
 # ---------------------------------------------------------------- dependencies
@@ -127,12 +132,9 @@ def current_user_optional(
     cm_session: str | None = Cookie(default=None, alias=SESSION_COOKIE),
     db: DbSession = Depends(get_db),
 ) -> User | None:
-    """The viewer, if there is one.
-
-    Most read endpoints take this rather than requiring a user, because the
-    viewer is what badges and distance are computed *against* — a signed-out
-    request is not an error, it just gets no badges and no distance.
-    """
+    """The viewer, if there is one. Reference endpoints take this; anything
+    that shows listings requires `current_user` — there is no browsing
+    without an account in the pilot (UX_SPEC.md §6.2)."""
     if not cm_session:
         return None
     session = db.get(Session, cm_session)

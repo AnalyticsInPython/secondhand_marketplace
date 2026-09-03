@@ -2,6 +2,9 @@
 
 The *values* are contractual — the frontend copy and the seed data both depend
 on them. `label()` is the display string used in the UI; keep the two in sync.
+
+There is no `source` enum. Every listing is posted by a verified member; the
+external tier was removed on 2026-09-02 (docs/DECISIONS.md).
 """
 
 from enum import StrEnum
@@ -52,6 +55,13 @@ SUBCATEGORY_LABELS = {
 }
 
 
+def subcategory_belongs_to(subcategory: str | None, category: Category) -> bool:
+    """A subcategory is only valid under its parent (UX_SPEC.md §4.2)."""
+    if subcategory is None:
+        return True
+    return subcategory in SUBCATEGORIES.get(category, [])
+
+
 class Condition(StrEnum):
     NEW = "new"
     LIKE_NEW = "like_new"
@@ -88,21 +98,31 @@ class ListingStatus(StrEnum):
     ACTIVE = "active"
     RESERVED = "reserved"
     SOLD = "sold"
-
-
-class Source(StrEnum):
-    INTERNAL = "internal"
-    EBAY = "ebay"
-    FACEBOOK = "facebook"
-    KARROT = "karrot"
+    # Taken down by the seller. Hidden from everyone but the owner; the row
+    # stays because the event tables reference it.
+    DELISTED = "delisted"
 
     def label(self) -> str:
         return {
-            Source.INTERNAL: "Columbia Market",
-            Source.EBAY: "eBay",
-            Source.FACEBOOK: "Facebook Marketplace",
-            Source.KARROT: "Karrot",
+            ListingStatus.DRAFT: "Draft",
+            ListingStatus.ACTIVE: "On sale",
+            ListingStatus.RESERVED: "Reserved",
+            ListingStatus.SOLD: "Sold",
+            ListingStatus.DELISTED: "Delisted",
         }[self]
+
+
+# What the feed shows. Sold and delisted items drop out of search; the sold
+# page stays reachable by direct link (UX_SPEC.md §6.4).
+FEED_STATUSES = (ListingStatus.ACTIVE, ListingStatus.RESERVED)
+
+# The transitions a seller may request through PATCH /listings/{id}.
+SELLER_STATUSES = (
+    ListingStatus.ACTIVE,
+    ListingStatus.RESERVED,
+    ListingStatus.SOLD,
+    ListingStatus.DELISTED,
+)
 
 
 class School(StrEnum):
@@ -132,10 +152,10 @@ SCHOOL_LABELS = {
     School.CBS: "Business — CBS",
     School.LAW: "Law",
     School.SIPA: "SIPA",
-    School.SEAS_GRAD: "Engineering — SEAS",
+    School.SEAS_GRAD: "Engineering — SEAS (graduate)",
     School.TEACHERS_COLLEGE: "Teachers College",
     School.JOURNALISM: "Journalism",
-    School.PUBLIC_HEALTH: "Public Health",
+    School.PUBLIC_HEALTH: "Public Health — Mailman",
     School.GSAS: "GSAS",
     School.ARTS: "Arts",
     School.GSAPP: "Architecture — GSAPP",
