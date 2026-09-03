@@ -6,9 +6,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { DistanceSlider } from "@/components/DistanceSlider";
 import { ItemCard, ItemRow } from "@/components/ItemCard";
 import { MobileTabBar, TopNav } from "@/components/TopNav";
-import { Card, Checkbox, Chip, SectionLabel, Toggle } from "@/components/ui";
+import { Card, Checkbox, Chip, RemovableChip, SectionLabel, Toggle } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
-import { CATEGORY_LABELS } from "@/lib/format";
+import { CATEGORY_LABELS, CONDITION_LABELS, SUBCATEGORY_LABELS } from "@/lib/format";
 import type {
   Category,
   Condition,
@@ -170,6 +170,70 @@ export default function FeedPage() {
   const furnitureOn = (filters?.category ?? []).includes("furniture");
   const priceKey = `${filters?.price_min_cents ?? ""}-${filters?.price_max_cents ?? ""}`;
 
+  /**
+   * Every filter currently narrowing the feed, as removable chips.
+   *
+   * The trust toggles load ON from the member's saved profile defaults, so a
+   * third of people open a feed that is already narrowed by a control sitting
+   * off-screen in the sidebar. The headline count moves, but nothing says why
+   * it is small — which reads as an empty marketplace rather than a tight
+   * circle. Naming the active filters here is the same honesty the live counts
+   * are for (UX_SPEC.md §5.4).
+   *
+   * Radius is deliberately absent: the headline already states it.
+   */
+  const activeFilters: { key: string; label: string; clear: () => void }[] = [];
+  if (filters?.q) {
+    activeFilters.push({
+      key: "q",
+      label: `“${filters.q}”`,
+      clear: () => {
+        setQuery("");
+        patch({ q: undefined });
+      },
+    });
+  }
+  for (const [key, label] of [
+    ["same_zip", "Same ZIP code"],
+    ["same_nationality", "Same nationality"],
+    ["same_school", "Same college"],
+  ] as const) {
+    if (filters?.[key]) {
+      activeFilters.push({ key, label, clear: () => toggleTrust(key, false) });
+    }
+  }
+  for (const c of filters?.category ?? []) {
+    activeFilters.push({
+      key: `category:${c}`,
+      label: CATEGORY_LABELS[c],
+      clear: () => toggleCategory(c),
+    });
+  }
+  for (const s of filters?.subcategory ?? []) {
+    activeFilters.push({
+      key: `subcategory:${s}`,
+      label: SUBCATEGORY_LABELS[s] ?? s,
+      clear: () => toggleSubcategory(s),
+    });
+  }
+  for (const cond of filters?.condition ?? []) {
+    activeFilters.push({
+      key: `condition:${cond}`,
+      label: CONDITION_LABELS[cond],
+      clear: () => toggleCondition(cond),
+    });
+  }
+  if (filters?.price_min_cents !== undefined || filters?.price_max_cents !== undefined) {
+    const preset = PRICE_PRESETS.find(
+      (p) => p.min === filters?.price_min_cents && p.max === filters?.price_max_cents,
+    );
+    activeFilters.push({
+      key: "price",
+      label: preset?.label ?? "Price",
+      clear: () => setPrice(null),
+    });
+  }
+
   return (
     <>
       <TopNav me={me} query={query} onQuery={setQuery} />
@@ -330,6 +394,43 @@ export default function FeedPage() {
               ))}
             </select>
           </div>
+
+          {/* What is narrowing the feed right now, and how much of it you are
+              actually looking at. Both are easy to lose: the trust toggles can
+              arrive already on from the profile, and the grid always starts at
+              one page however wide the radius is. */}
+          {activeFilters.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 px-4 md:px-0">
+              <span className="text-[12.5px] text-ink3">Filtering by</span>
+              {activeFilters.map((f) => (
+                <RemovableChip key={f.key} label={f.label} onRemove={f.clear} />
+              ))}
+              <button
+                type="button"
+                onClick={() => {
+                  setQuery("");
+                  setFilters({
+                    limit: 24,
+                    sort: filters?.sort,
+                    radius_mi: filters?.radius_mi,
+                  });
+                }}
+                className="text-[12.5px] font-semibold text-deep underline underline-offset-2"
+              >
+                Clear all
+              </button>
+            </div>
+          )}
+
+          {/* The grid always starts at one page however wide the radius is, so
+              0.5mi and 10mi look identical until you scroll. Say so up front;
+              the progress line by the Load more button covers the rest. */}
+          {!loading && items.length < total && (
+            <p className="px-4 text-[12.5px] text-ink3 md:px-0">
+              First {items.length.toLocaleString()} of {total.toLocaleString()} shown — scroll for
+              the rest
+            </p>
+          )}
 
           {/* Category chips — the mobile equivalent of the sidebar list */}
           <div className="flex gap-2 overflow-x-auto px-4 md:hidden">

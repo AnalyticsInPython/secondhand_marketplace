@@ -311,6 +311,44 @@ export function Card({ children, className }: { children: ReactNode; className?:
   );
 }
 
+/**
+ * The removable variant of Chip (UX_SPEC.md §3.4).
+ *
+ * Used for the active-filter summary above the feed: every chip names one
+ * filter that is narrowing what you see, and clearing it is one tap.
+ */
+export function RemovableChip({
+  label,
+  onRemove,
+}: {
+  label: string;
+  onRemove: () => void;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-tint py-1 pl-3 pr-1 text-[12.5px] font-semibold text-deep">
+      {label}
+      <button
+        type="button"
+        onClick={onRemove}
+        aria-label={`Remove filter: ${label}`}
+        className="grid h-[19px] w-[19px] place-items-center rounded-full transition-colors hover:bg-deep hover:text-white"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          className="h-3 w-3"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.6"
+          strokeLinecap="round"
+          aria-hidden="true"
+        >
+          <path d="M6 6l12 12M18 6L6 18" />
+        </svg>
+      </button>
+    </span>
+  );
+}
+
 export function SectionLabel({ children }: { children: ReactNode }) {
   return (
     <p className="text-[11px] font-semibold tracking-[0.08em] text-ink2">{children}</p>
