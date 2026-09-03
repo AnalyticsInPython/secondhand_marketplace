@@ -22,6 +22,7 @@ const MENU = [
   { href: "/my-listings", label: "My listings" },
   { href: "/saved", label: "Saved items" },
   { href: "/inbox", label: "Inbox" },
+  { href: "/insights", label: "Dashboard" },
   { href: "/settings/profile", label: "Profile & account" },
 ];
 
@@ -281,6 +282,18 @@ export function TopNav({
           </span>
         </div>
 
+        {/* Secondary weight on purpose: selling is the primary action, the
+            dashboard is a place you visit occasionally. It sits in the bar
+            rather than only in the avatar menu because nobody finds an
+            analytics page hidden behind an avatar. */}
+        <Link
+          href="/insights"
+          className="hidden items-center gap-1.5 rounded-[10px] border border-line bg-surface px-4 py-3 text-[14px] font-semibold text-deep hover:border-deep lg:flex"
+        >
+          <ChartIcon />
+          Dashboard
+        </Link>
+
         <Link
           href="/sell"
           className="flex items-center gap-1.5 rounded-[10px] bg-deep px-4 py-3 text-[14px] font-semibold text-white"
@@ -292,6 +305,21 @@ export function TopNav({
         <AvatarMenu me={me} />
       </div>
     </header>
+  );
+}
+
+/** Bar-chart glyph for the Dashboard link. 24x24, 1.8px stroke, per UX_SPEC §3.3. */
+function ChartIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M4 20V10M10 20V4M16 20v-7M22 20H2"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 
