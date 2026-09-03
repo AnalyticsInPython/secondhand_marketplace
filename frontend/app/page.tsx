@@ -5,9 +5,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { DistanceSlider } from "@/components/DistanceSlider";
 import { ItemCard, ItemRow } from "@/components/ItemCard";
 import { MobileTabBar, TopNav } from "@/components/TopNav";
-import { Card, Checkbox, Chip, SectionLabel, Toggle } from "@/components/ui";
+import { Card, Checkbox, Chip, RemovableChip, SectionLabel, Toggle } from "@/components/ui";
 import { api } from "@/lib/api";
-import { CATEGORY_LABELS } from "@/lib/format";
+import { CATEGORY_LABELS, CONDITION_LABELS } from "@/lib/format";
 import type { Category, FacetCounts, FeedFilters, ListingCard, Me, SortOrder } from "@/lib/types";
 
 const SORTS: { value: SortOrder; label: string }[] = [
@@ -118,6 +118,51 @@ export default function FeedPage() {
   }
 
   const zip = me?.zip_code ?? "10027";
+
+  /**
+   * Every filter currently narrowing the feed, as removable chips.
+   *
+   * The trust toggles load ON from the member's saved profile defaults, so a
+   * third of people open a feed that is already narrowed by a control sitting
+   * off-screen in the sidebar. The headline count moves, but nothing says why
+   * it is small — which reads as an empty marketplace rather than a tight
+   * circle. Naming the active filters here is the same honesty the live counts
+   * are for (UX_SPEC.md §5.4).
+   *
+   * Radius is deliberately absent: the headline already states it.
+   */
+  const activeFilters: { key: string; label: string; clear: () => void }[] = [];
+  if (filters.q) {
+    activeFilters.push({
+      key: "q",
+      label: `“${filters.q}”`,
+      clear: () => patch({ q: undefined }),
+    });
+  }
+  for (const [key, label] of [
+    ["same_zip", "Same ZIP code"],
+    ["same_nationality", "Same nationality"],
+    ["same_school", "Same college"],
+  ] as const) {
+    if (filters[key]) {
+      activeFilters.push({ key, label, clear: () => toggleTrust(key, false) });
+    }
+  }
+  for (const c of filters.category ?? []) {
+    activeFilters.push({
+      key: `category:${c}`,
+      label: CATEGORY_LABELS[c],
+      clear: () => toggleCategory(c),
+    });
+  }
+  for (const cond of filters.condition ?? []) {
+    activeFilters.push({
+      key: `condition:${cond}`,
+      label: CONDITION_LABELS[cond] ?? cond,
+      clear: () =>
+        patch({ condition: (filters.condition ?? []).filter((x) => x !== cond) }),
+    });
+  }
 
   return (
     <>
@@ -242,6 +287,39 @@ export default function FeedPage() {
               ))}
             </select>
           </div>
+
+          {/* What is narrowing the feed right now, and how much of it you are
+              actually looking at. Both are easy to lose: the trust toggles can
+              arrive already on from the profile, and the grid always starts at
+              one page however wide the radius is. */}
+          {activeFilters.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 px-4 md:px-0">
+              <span className="text-[12.5px] text-ink3">Filtering by</span>
+              {activeFilters.map((f) => (
+                <RemovableChip key={f.key} label={f.label} onRemove={f.clear} />
+              ))}
+              <button
+                type="button"
+                onClick={() =>
+                  setFilters({
+                    sort: filters.sort,
+                    limit: PAGE_SIZE,
+                    radius_mi: filters.radius_mi,
+                  })
+                }
+                className="text-[12.5px] font-semibold text-deep underline underline-offset-2"
+              >
+                Clear all
+              </button>
+            </div>
+          )}
+
+          {!loading && total > 0 && (
+            <p className="px-4 text-[12.5px] text-ink3 md:px-0">
+              Showing {items.length.toLocaleString()} of {total.toLocaleString()}
+              {items.length < total ? " — scroll for more" : ""}
+            </p>
+          )}
 
           {/* Category chips — the mobile equivalent of the sidebar list */}
           <div className="flex gap-2 overflow-x-auto px-4 md:hidden">
