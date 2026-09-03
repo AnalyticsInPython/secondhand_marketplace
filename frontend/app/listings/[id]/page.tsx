@@ -21,6 +21,7 @@ export default function ListingPage({ params }: { params: Promise<{ id: string }
   const { id } = use(params);
   const [me, setMe] = useState<Me | null>(null);
   const [listing, setListing] = useState<ListingDetail | null>(null);
+  const [photoIndex, setPhotoIndex] = useState(0);
 
   useEffect(() => {
     api.me().then(setMe).catch(() => setMe(null));
@@ -45,10 +46,48 @@ export default function ListingPage({ params }: { params: Promise<{ id: string }
       <main className="mx-auto flex max-w-[1200px] flex-col gap-10 px-0 py-0 md:flex-row md:px-10 md:py-7">
         {/* ---------------- gallery + description ---------------- */}
         <div className="flex min-w-0 flex-1 flex-col gap-3">
+          {/* Gallery. The gradient stays underneath as the fallback, so a
+              missing file degrades to the placeholder rather than to a broken
+              image icon. Thumbnails only appear when there is more than one
+              photo — state D1 in UX_SPEC §7. */}
           <div
-            className="photo-placeholder aspect-[4/3] w-full md:rounded-[16px]"
+            className="photo-placeholder relative aspect-[4/3] w-full overflow-hidden md:rounded-[16px]"
             style={placeholderGradient(listing.id)}
-          />
+          >
+            {listing.photo_urls[photoIndex] && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={listing.photo_urls[photoIndex]}
+                alt={listing.title}
+                className="absolute inset-0 h-full w-full object-cover"
+              />
+            )}
+          </div>
+
+          {listing.photo_urls.length > 1 && (
+            <div className="flex gap-2.5 overflow-x-auto px-4 md:px-0">
+              {listing.photo_urls.map((url, i) => (
+                <button
+                  key={url}
+                  type="button"
+                  onClick={() => setPhotoIndex(i)}
+                  aria-label={`Photo ${i + 1} of ${listing.photo_urls.length}`}
+                  aria-current={i === photoIndex}
+                  className={`photo-placeholder relative h-[86px] w-[116px] shrink-0 overflow-hidden rounded-[12px] border-2 ${
+                    i === photoIndex ? "border-deep" : "border-transparent"
+                  }`}
+                  style={placeholderGradient(listing.id + i)}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={url}
+                    alt=""
+                    className="absolute inset-0 h-full w-full object-cover"
+                  />
+                </button>
+              ))}
+            </div>
+          )}
 
           <div className="flex flex-col gap-3.5 px-4 md:px-0">
             <Card className="flex flex-col gap-3 p-6">

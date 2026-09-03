@@ -37,12 +37,20 @@ LISTING_COLUMNS = (
 )
 
 PHOTO_COLUMNS = ("id", "listing_id", "url", "position", "created_at")
-VIEW_COLUMNS = ("id", "listing_id", "viewer_id", "viewed_at", "surface")
+# Order matches backend/app/models.py::ListingView. \copy maps by POSITION, not
+# by header name, so a CSV whose columns are ordered differently from the table
+# loads surface into viewed_at without complaining.
+VIEW_COLUMNS = ("id", "listing_id", "viewer_id", "surface", "viewed_at")
 SAVE_COLUMNS = ("id", "listing_id", "user_id", "created_at")
 ENQUIRY_COLUMNS = ("id", "listing_id", "buyer_id", "channel", "created_at")
 FILTER_EVENT_COLUMNS = ("id", "user_id", "filter_key", "value", "result_count", "created_at")
 
 ZIP_COLUMNS = ("zip_code", "neighbourhood", "borough", "lat", "lon", "miles_from_campus")
+
+# Generator metadata, not product data: the Pexels search term each listing's
+# photos should match. Kept out of listings.csv because UX_SPEC §4.2 has no such
+# column and the database should not grow one.
+PHOTO_QUERY_COLUMNS = ("listing_id", "photo_query")
 
 
 def _render(value):
@@ -156,6 +164,10 @@ def export_all(out_dir, users, listings, photos, views, saves, enquiries,
         os.path.join(out_dir, "filter_events.csv"), FILTER_EVENT_COLUMNS, filter_events)
     written["zip_reference.csv"] = write_csv(
         os.path.join(out_dir, "zip_reference.csv"), ZIP_COLUMNS, zip_rows)
+    written["photo_queries.csv"] = write_csv(
+        os.path.join(out_dir, "photo_queries.csv"), PHOTO_QUERY_COLUMNS,
+        [{"listing_id": l["id"], "photo_query": l.get("_photo_query", "")}
+         for l in listings])
     write_sql(os.path.join(out_dir, "seed.sql"), users, listings, photos,
               views, saves, enquiries, filter_events, zip_rows)
     written["seed.sql"] = sum(written.values())

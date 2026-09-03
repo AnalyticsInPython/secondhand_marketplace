@@ -241,8 +241,38 @@ QUERY_SORT = "closest"
 # generator and the validator cannot disagree about them.
 # ---------------------------------------------------------------------------
 
-EMAIL_PATTERN = r"^[a-z0-9._%+-]+@columbia\.edu$"  # §4.1, case-insensitive
-EMAIL_DOMAIN = "columbia.edu"
+# §4.1, as amended by the multi-domain fix. Four whole domains, never a suffix
+# test: endswith("@columbia.edu") rejects @gsb.columbia.edu, and a looser suffix
+# match against a bare columbia.edu would admit @evil-columbia.edu.
+# backend/app/config.py is authoritative and publishes the list at
+# /reference/enums; this copy exists so the generator has no backend dependency.
+EMAIL_DOMAINS: tuple[str, ...] = (
+    "columbia.edu",
+    "gsb.columbia.edu",
+    "cumc.columbia.edu",
+    "tc.columbia.edu",
+)
+EMAIL_PATTERN = (
+    r"^[a-z0-9._%+-]+@(?:"
+    + "|".join(d.replace(".", r"\.") for d in EMAIL_DOMAINS)
+    + r")$"
+)
+
+# Schools that issue their own address; everyone else is on plain columbia.edu.
+# Seeding all four means the multi-domain sign-in path is exercised by the data
+# rather than only by a hand-typed test -- the same argument §9 makes for the
+# ~30% NULL phone numbers.
+SCHOOL_EMAIL_DOMAIN: dict[str, str] = {
+    "cbs": "gsb.columbia.edu",
+    "teachers_college": "tc.columbia.edu",
+    "public_health": "cumc.columbia.edu",
+    "vps": "cumc.columbia.edu",
+}
+
+
+def email_domain_for(school: str) -> str:
+    """The address a school issues. Mirrors backend/scripts/seed.py."""
+    return SCHOOL_EMAIL_DOMAIN.get(school, "columbia.edu")
 
 USERNAME_PATTERN = r"^[a-zA-Z0-9._]{3,20}$"  # §4.1
 USERNAME_MIN_CHARS = 3
@@ -407,6 +437,22 @@ def _check() -> None:
     assert DEFAULT_SORT in SORT_OPTIONS and QUERY_SORT in SORT_OPTIONS
     assert set(BADGE_LABELS) == set(BADGE_ATTRIBUTES)
     assert set(BADGE_ATTRIBUTES) < set(FILTER_ATTRIBUTES), "grade filters but never badges"
+
+    # Every school-issued domain is one the API actually admits, and every school
+    # named in the mapping exists.
+    import re as _re
+
+    for school, domain in SCHOOL_EMAIL_DOMAIN.items():
+        assert school in SCHOOLS, "unknown school in SCHOOL_EMAIL_DOMAIN: %s" % school
+        assert domain in EMAIL_DOMAINS, "%s issues an inadmissible domain %s" % (school, domain)
+    compiled = _re.compile(EMAIL_PATTERN)
+    for school in SCHOOLS:
+        probe = "ab1234@%s" % email_domain_for(school)
+        assert compiled.match(probe), "%s produces an address the pattern rejects: %s" % (
+            school, probe)
+    # Suffix attacks the whole-domain rule must reject.
+    for bad in ("x@evil-columbia.edu", "x@columbia.edu.evil.com", "x@barnard.edu"):
+        assert not compiled.match(bad), "pattern admits %s" % bad
 
 
 _check()

@@ -25,6 +25,13 @@ import datetime as dt
 from . import vocabularies as V
 
 # The identity the design screens are drawn for.
+#
+# Note the address: this member is at CBS, and `vocabularies.email_domain_for`
+# would issue them @gsb.columbia.edu. The plain @columbia.edu here is deliberate
+# and matches what the account-settings mockup actually shows. It is also true to
+# life -- a CBS student holds a general UNI address as well -- and it means the
+# fixture exercises the case where the school and the email domain do not imply
+# each other, which any prefill-school-from-subdomain logic needs to survive.
 REFERENCE = {
     "username": "brian_dw",
     "display_name": "Brian Lee",
@@ -89,6 +96,13 @@ def install(rng, users, listings, photos, now):
     reference["is_verified"] = True
     reference["status"] = "active"
     reference["default_radius_mi"] = V.DEFAULT_RADIUS_MI
+    # Feed defaults as the account-settings mockup draws them: same-ZIP off,
+    # same-nationality on, same-college off. Left to the random draw these came
+    # out inverted, and the demo feed opened pre-narrowed to one ZIP -- which is
+    # not the screen anyone designed.
+    reference["default_filter_same_zip"] = False
+    reference["default_filter_same_nationality"] = True
+    reference["default_filter_same_school"] = False
     manifest["reference_member"] = reference["id"]
     notes.append("reference member is @%s (%s, %s, %s)" % (
         reference["username"], reference["zip_code"],
