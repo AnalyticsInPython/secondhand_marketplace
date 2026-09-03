@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 
-import type { Category, Condition, ListingCard } from "./types";
+import type { Category, Condition, ListingCard, ListingStatus } from "./types";
 
 export const CATEGORY_LABELS: Record<Category, string> = {
   furniture: "Furniture",
@@ -18,6 +18,22 @@ export const CONDITION_LABELS: Record<Condition, string> = {
   like_new: "Like new",
   used_good: "Used — good",
   used_fair: "Used — fair",
+};
+
+export const SUBCATEGORY_LABELS: Record<string, string> = {
+  desks: "Desks",
+  chairs: "Chairs",
+  beds_mattresses: "Beds & mattresses",
+  storage_shelving: "Storage & shelving",
+  sofas_tables: "Sofas & tables",
+};
+
+export const STATUS_LABELS: Record<ListingStatus, string> = {
+  draft: "Draft",
+  active: "On sale",
+  reserved: "Reserved",
+  sold: "Sold",
+  delisted: "Delisted",
 };
 
 export function price(cents: number, isFree: boolean): string {
@@ -50,6 +66,10 @@ export function relativeTime(iso: string): string {
     }
   }
   return "just now";
+}
+
+export function absoluteDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
 /**

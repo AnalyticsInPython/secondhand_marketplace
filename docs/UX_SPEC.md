@@ -1,5 +1,10 @@
 # Columbia Market — UI/UX Specification
 
+> **Amended 2026-09-02.** Three decisions changed this document after it was
+> written — the external tier (§2, §4.2, §5.5, §9) is removed, sign-in admits
+> four Columbia domains (§4.1, §6.1, §6.2), and a `delisted` status exists.
+> See [`DECISIONS.md`](DECISIONS.md); where the two disagree, that file wins.
+
 **Status:** design complete for the six screens listed below. No code written yet.
 **Source of truth for visuals:** [Figma — CBS_marketplace](https://www.figma.com/design/ojcR7eFv5r7mP1uUpLfhYD/CBS_marketplace)
 **Source of truth for behaviour:** this document.

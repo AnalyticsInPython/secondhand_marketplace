@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { CollectionPage } from "@/components/CollectionPage";
@@ -14,6 +15,7 @@ import type { ListingCard, Me } from "@/lib/types";
  * it sold reads as data loss rather than as a status change.
  */
 export default function SavedPage() {
+  const router = useRouter();
   const [me, setMe] = useState<Me | null>(null);
   const [items, setItems] = useState<ListingCard[]>([]);
   const [total, setTotal] = useState(0);
@@ -21,7 +23,7 @@ export default function SavedPage() {
   const [loadingMore, setLoadingMore] = useState(false);
 
   useEffect(() => {
-    api.me().then(setMe).catch(() => setMe(null));
+    api.me().then(setMe).catch(() => router.replace("/signin"));
     api
       .mySaves()
       .then((page) => {
@@ -30,7 +32,7 @@ export default function SavedPage() {
       })
       .catch(() => setTotal(0))
       .finally(() => setLoading(false));
-  }, []);
+  }, [router]);
 
   const loadMore = useCallback(async () => {
     if (loadingMore) return;

@@ -28,3 +28,9 @@ photos/
 
 # Downloaded Pexels originals. Cached locally; rebuild with scripts/fetch_photos.py
 data/photo_pool/
+
+# Processed photo uploads (local pilot storage)
+backend/media/
+
+# Local tooling
+.claude/

@@ -6,6 +6,11 @@ email-validator==2.2.0
 pydantic-settings==2.7.0
 python-multipart==0.0.20
 
+# Photos: resize, re-encode to WebP, strip metadata (services/photos.py)
+Pillow==11.1.0
+# Optional: iPhone HEIC uploads. Uncomment to accept them.
+# pillow-heif==0.21.0
+
 # The analysis layer. This is a Python course, so every research question in
 # PROPOSAL.md is answered here rather than in the frontend.
 pandas==2.2.3
@@ -14,5 +19,9 @@ numpy==2.2.1
 # Seed data only
 Faker==33.1.0
 
-# Optional: swap DATABASE_URL to Postgres (Neon) and uncomment
+# Tests
+pytest==8.3.4
+httpx==0.28.1
+
+# Optional: swap DATABASE_URL to Postgres and uncomment
 # psycopg[binary]==3.2.3

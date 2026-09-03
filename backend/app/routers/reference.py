@@ -17,12 +17,13 @@ from ..enums import (
     SUBCATEGORY_LABELS,
     UNDERGRADUATE_SCHOOLS,
     Grade,
-    Source,
+    ListingStatus,
+    SortOrder,
 )
 from ..models import User
-from ..schemas import ZipOut
+from ..schemas import CountryOut, ZipOut
 from ..security import current_user_optional
-from ..services import geo
+from ..services import countries, geo
 
 router = APIRouter(tags=["reference"])
 
@@ -37,17 +38,23 @@ def search_zips(q: str = "", viewer: User | None = Depends(current_user_optional
     return geo.search(q, origin_zip=viewer.zip_code if viewer else None)
 
 
+@router.get("/reference/countries", response_model=list[CountryOut])
+def list_countries():
+    """The nationality picker: the four most common at Columbia first."""
+    return countries.all_countries()
+
+
 @router.get("/reference/enums")
 def enums():
     """One call the frontend makes at boot to fill every picker."""
     return {
+        "allowed_email_domains": list(settings.domains_ordered),
         "categories": [
             {
                 "value": c.value,
                 "label": label,
                 "subcategories": [
-                    {"value": s, "label": SUBCATEGORY_LABELS[s]}
-                    for s in SUBCATEGORIES.get(c, [])
+                    {"value": s, "label": SUBCATEGORY_LABELS[s]} for s in SUBCATEGORIES.get(c, [])
                 ],
             }
             for c, label in CATEGORY_LABELS.items()
@@ -58,10 +65,17 @@ def enums():
             "undergraduate": [{"value": s.value, "label": s.label()} for s in UNDERGRADUATE_SCHOOLS],
             "graduate": [{"value": s.value, "label": s.label()} for s in GRADUATE_SCHOOLS],
         },
-        "sources": [{"value": s.value, "label": s.label()} for s in Source],
+        "listing_statuses": [{"value": s.value, "label": s.label()} for s in ListingStatus],
+        "sort_orders": [s.value for s in SortOrder],
         # The presets under the distance slider. Continuous in between.
-        "radius_steps_mi": [0.5, 1, 2.5, 5, 10],
-        # Who may register, so the sign-up and sign-in screens validate
-        # against exactly what the API enforces. See app/emails.py.
-        "email_domains": list(settings.allowed_domains_ordered),
+        "radius_steps_mi": settings.radius_steps_mi,
+        "radius_mi": {
+            "min": settings.min_radius_mi,
+            "max": settings.max_radius_mi,
+            "default": settings.default_radius_mi,
+        },
+        "photos": {
+            "max_per_listing": settings.max_photos_per_listing,
+            "max_bytes": settings.max_photo_bytes,
+        },
     }

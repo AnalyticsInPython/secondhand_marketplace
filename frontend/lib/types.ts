@@ -15,8 +15,7 @@ export type Category =
 
 export type Condition = "new" | "like_new" | "used_good" | "used_fair";
 export type Grade = "undergraduate" | "graduate" | "faculty_staff";
-export type ListingStatus = "draft" | "active" | "reserved" | "sold";
-export type Source = "internal" | "ebay" | "facebook" | "karrot";
+export type ListingStatus = "draft" | "active" | "reserved" | "sold" | "delisted";
 export type SortOrder = "newest" | "closest" | "price_asc" | "price_desc" | "most_saved";
 
 /** Computed per (viewer, listing). An attribute you do not share is absent. */
@@ -32,6 +31,12 @@ export interface SellerPublic {
   can_receive_sms: boolean;
 }
 
+export interface Photo {
+  url: string;
+  width: number | null;
+  height: number | null;
+}
+
 export interface ListingCard {
   id: string;
   title: string;
@@ -41,25 +46,25 @@ export interface ListingCard {
   category: Category;
   subcategory: string | null;
   zip_code: string;
-  /** Already measured from the viewer's ZIP. Null when signed out. */
+  neighbourhood: string | null;
+  /** Already measured from the viewer's ZIP. */
   distance_mi: number | null;
   posted_at: string;
   status: ListingStatus;
   cover_photo_url: string | null;
+  photo_count: number;
   badges: Badge[];
-  is_external: boolean;
-  source: Source;
-  source_label: string;
 }
 
 export interface ListingDetail extends ListingCard {
   description: string | null;
   is_negotiable: boolean;
+  photos: Photo[];
   photo_urls: string[];
   view_count: number;
   save_count: number;
   enquiry_count: number;
-  external_url: string | null;
+  sold_at: string | null;
   seller: SellerPublic | null;
   is_saved: boolean;
   is_owner: boolean;
@@ -80,6 +85,7 @@ export interface FacetCount {
 export interface FacetCounts {
   total: number;
   categories: FacetCount[];
+  subcategories: FacetCount[];
   conditions: FacetCount[];
   same_zip: number;
   same_nationality: number;
@@ -114,10 +120,41 @@ export interface ZipResult {
   miles_from_campus: number | null;
 }
 
+export interface Country {
+  code: string;
+  name: string;
+  pinned: boolean;
+}
+
+export interface EmailCheck {
+  email: string;
+  allowed: boolean;
+  reason: string | null;
+  suggested_school: string | null;
+}
+
+export interface Option {
+  value: string;
+  label: string;
+}
+
+/** GET /reference/enums — one call at boot fills every picker. */
+export interface EnumsRef {
+  allowed_email_domains: string[];
+  categories: (Option & { subcategories: Option[] })[];
+  conditions: Option[];
+  grades: Option[];
+  schools: { undergraduate: Option[]; graduate: Option[] };
+  listing_statuses: Option[];
+  radius_steps_mi: number[];
+  photos: { max_per_listing: number; max_bytes: number };
+}
+
 /** The query string of GET /listings. */
 export interface FeedFilters {
   q?: string;
   category?: Category[];
+  subcategory?: string[];
   condition?: Condition[];
   price_min_cents?: number;
   price_max_cents?: number;
@@ -140,4 +177,17 @@ export interface EnquiryRow {
   created_at: string;
   listing: ListingCard;
   seller_username: string | null;
+}
+
+export interface ListingInput {
+  title: string;
+  description: string | null;
+  category: Category;
+  subcategory: string | null;
+  condition: Condition;
+  price_cents: number;
+  is_free: boolean;
+  is_negotiable: boolean;
+  zip_code: string;
+  photo_urls: string[];
 }

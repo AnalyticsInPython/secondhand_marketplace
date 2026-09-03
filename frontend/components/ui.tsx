@@ -150,6 +150,48 @@ export function Input({
   );
 }
 
+// ---------------------------------------------------------------- Select
+
+type SelectProps = {
+  value: string;
+  onChange: (v: string) => void;
+  children: ReactNode;
+  placeholder?: string;
+  state?: "default" | "error" | "ok";
+  disabled?: boolean;
+};
+
+/** A native select in the Input's clothes. Fixed vocabularies only — never free text. */
+export function Select({ value, onChange, children, placeholder, state = "default", disabled }: SelectProps) {
+  const border = {
+    default: "border-line-strong",
+    error: "border-danger border-[1.5px]",
+    ok: "border-ok border-[1.5px]",
+  }[state];
+  return (
+    <div
+      className={cx(
+        "flex items-center rounded-[10px] border px-4 py-3.5",
+        disabled ? "bg-muted" : "bg-surface",
+        border,
+      )}
+    >
+      <select
+        value={value}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
+        className={cx(
+          "w-full cursor-pointer bg-transparent text-[15px] font-medium outline-none",
+          value ? "text-ink" : "text-ink3",
+        )}
+      >
+        {placeholder !== undefined && <option value="">{placeholder}</option>}
+        {children}
+      </select>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------- Chip
 
 export function Chip({
@@ -189,14 +231,6 @@ export function MatchBadge({ children }: { children: ReactNode }) {
     <span className="inline-flex items-center gap-1 rounded-full bg-tint px-2.5 py-1 text-[9.5px] font-semibold tracking-[0.02em] text-deep">
       <ShieldIcon className="h-2.5 w-2.5" />
       {children}
-    </span>
-  );
-}
-
-export function ExternalBadge({ label }: { label: string }) {
-  return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-overlay)] px-2.5 py-1 text-[9.5px] font-semibold tracking-[0.02em] text-white">
-      EXTERNAL · {label.toUpperCase()}
     </span>
   );
 }
@@ -357,6 +391,42 @@ export function HeartIcon({ className, filled }: IconProps & { filled?: boolean 
       fill={filled ? "currentColor" : "none"}
     >
       <path d="M12 20.5S3.5 15.3 3.5 9.6A4.6 4.6 0 0112 7a4.6 4.6 0 018.5 2.6c0 5.7-8.5 10.9-8.5 10.9z" />
+    </svg>
+  );
+}
+
+export function XIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className ?? "h-4 w-4"} {...stroke} strokeWidth={2.2}>
+      <path d="M6 6l12 12M18 6L6 18" />
+    </svg>
+  );
+}
+
+export function CameraIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className ?? "h-5 w-5"} {...stroke}>
+      <path d="M3.5 8.5A2.5 2.5 0 016 6h2l1.2-2h5.6L16 6h2a2.5 2.5 0 012.5 2.5v8A2.5 2.5 0 0118 19H6a2.5 2.5 0 01-2.5-2.5v-8z" />
+      <circle cx="12" cy="12.5" r="3.5" />
+    </svg>
+  );
+}
+
+export function ShareIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className ?? "h-[18px] w-[18px]"} {...stroke}>
+      <circle cx="18" cy="5" r="2.5" />
+      <circle cx="6" cy="12" r="2.5" />
+      <circle cx="18" cy="19" r="2.5" />
+      <path d="M8.2 10.8l7.6-4.4M8.2 13.2l7.6 4.4" />
+    </svg>
+  );
+}
+
+export function ChevronLeftIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className ?? "h-4 w-4"} {...stroke} strokeWidth={2.2}>
+      <path d="M15 5l-7 7 7 7" />
     </svg>
   );
 }

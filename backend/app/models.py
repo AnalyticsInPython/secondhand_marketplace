@@ -1,7 +1,8 @@
-"""ORM models — UX_SPEC.md §4.
+"""ORM models — UX_SPEC.md §4, internal listings only.
 
-Enums are stored as VARCHAR with a check constraint (`native_enum=False`) so the
-schema is identical on SQLite and Postgres.
+Enums are stored as VARCHAR (`native_enum=False`) so the schema is identical on
+SQLite and Postgres. Seller attributes are never copied onto a listing; they are
+joined at read time, so editing a profile corrects every badge at once.
 """
 
 from __future__ import annotations
@@ -11,7 +12,6 @@ from datetime import datetime, timezone
 
 from sqlalchemy import (
     Boolean,
-    CheckConstraint,
     DateTime,
     Enum,
     Float,
@@ -32,7 +32,6 @@ from .enums import (
     Grade,
     ListingStatus,
     School,
-    Source,
     UserStatus,
     ViewSurface,
 )
@@ -93,19 +92,10 @@ class User(Base):
 
 class Listing(Base):
     __tablename__ = "listings"
-    __table_args__ = (
-        # External listings must point somewhere; internal ones must not.
-        CheckConstraint(
-            "(source = 'internal' AND external_url IS NULL AND seller_id IS NOT NULL) "
-            "OR (source != 'internal' AND external_url IS NOT NULL)",
-            name="ck_listing_source_shape",
-        ),
-        Index("ix_listings_feed", "status", "source", "category", "zip_code"),
-    )
+    __table_args__ = (Index("ix_listings_feed", "status", "category", "zip_code"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    seller_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), index=True)
-    source: Mapped[Source] = mapped_column(_enum(Source, "source"), default=Source.INTERNAL)
+    seller_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
 
     title: Mapped[str] = mapped_column(String(60), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
@@ -128,20 +118,15 @@ class Listing(Base):
     save_count: Mapped[int] = mapped_column(Integer, default=0)
     enquiry_count: Mapped[int] = mapped_column(Integer, default=0)
 
-    external_url: Mapped[str | None] = mapped_column(Text)
-
     posted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
     # The event the whole analysis counts.
     sold_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    seller: Mapped[User | None] = relationship(back_populates="listings")
+    seller: Mapped[User] = relationship(back_populates="listings")
     photos: Mapped[list[ListingPhoto]] = relationship(
         back_populates="listing", cascade="all, delete-orphan", order_by="ListingPhoto.position"
     )
-
-    @property
-    def is_external(self) -> bool:
-        return self.source != Source.INTERNAL
 
     @property
     def cover_photo_url(self) -> str | None:
@@ -154,11 +139,34 @@ class ListingPhoto(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     listing_id: Mapped[str] = mapped_column(ForeignKey("listings.id", ondelete="CASCADE"), index=True)
+    # Relative to the API origin ("/media/<name>.webp"); made absolute on the way out.
     url: Mapped[str] = mapped_column(Text, nullable=False)
     position: Mapped[int] = mapped_column(Integer, default=0)  # 0 = cover
+    width: Mapped[int | None] = mapped_column(Integer)
+    height: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     listing: Mapped[Listing] = relationship(back_populates="photos")
+
+
+class Upload(Base):
+    """A processed photo that has been uploaded but not yet attached.
+
+    POST /photos writes one of these; POST /listings turns it into a
+    ListingPhoto. Ownership is checked at attach time, so nobody can post a
+    listing with somebody else's picture — or with an arbitrary URL.
+    """
+
+    __tablename__ = "uploads"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    url: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    width: Mapped[int] = mapped_column(Integer)
+    height: Mapped[int] = mapped_column(Integer)
+    size_bytes: Mapped[int] = mapped_column(Integer)
+    listing_id: Mapped[str | None] = mapped_column(ForeignKey("listings.id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
 # --------------------------------------------------------------------------
@@ -192,12 +200,18 @@ class Session(Base):
 
 
 class ListingView(Base):
+    """One row per impression (feed/search) or page open (detail)."""
+
     __tablename__ = "listing_views"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     listing_id: Mapped[str] = mapped_column(ForeignKey("listings.id"), index=True)
     viewer_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), index=True)
     surface: Mapped[ViewSurface] = mapped_column(_enum(ViewSurface, "view_surface"))
+    # The badge experiment's treatment flag: were match badges rendered on this
+    # impression? Always True unless BADGE_EXPERIMENT_ENABLED. Recorded from
+    # day one so the causal analysis is possible without a retrofit.
+    badges_shown: Mapped[bool] = mapped_column(Boolean, default=True)
     viewed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
 
 
