@@ -90,7 +90,7 @@ backend/
       frames.py        database → pandas
       questions.py     the research questions
   scripts/seed.py      loads ../data/*.csv (Kobe's corpus); --demo-email, --limit
-  tests/               59 tests; run with `pytest`
+  tests/               61 tests; run with `pytest`
 ```
 
 ## The feed and its live counts

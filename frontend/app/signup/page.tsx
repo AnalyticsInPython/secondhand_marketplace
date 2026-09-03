@@ -33,6 +33,7 @@ export default function SignUpPage() {
   const [enums, setEnums] = useState<EnumsRef | null>(null);
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState<string | null>(null);
+  const [deliveryError, setDeliveryError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const emailValid = isColumbiaEmail(email);
@@ -99,6 +100,7 @@ export default function SignUpPage() {
         grade,
         zip_code: zipPicked!.zip_code,
       });
+      setDeliveryError(res.delivery_error);
       setSent(res.dev_link ?? "sent");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
@@ -115,6 +117,12 @@ export default function SignUpPage() {
         <p className="text-[15px] leading-6 text-ink2">
           We sent a sign-in link to {email.trim()}. It works once and expires in 15 minutes.
         </p>
+        {deliveryError && (
+          <p className="rounded-[10px] border border-danger/30 bg-danger/5 p-3 text-[12px] leading-[17px] text-danger">
+            The email could not be sent: {deliveryError} Check the mail settings in backend/.env. The
+            development link below still works.
+          </p>
+        )}
         {sent !== "sent" && (
           <div className="flex flex-col gap-1 rounded-[10px] border border-dashed border-light bg-tint p-3">
             <p className="text-[10.5px] font-semibold tracking-[0.06em] text-ink3">

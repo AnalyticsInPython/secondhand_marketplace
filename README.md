@@ -57,7 +57,7 @@ There is no password anywhere. To receive the link in a real Columbia inbox, set
 `backend/.env`.
 
 ```bash
-cd backend && pytest -q                            # 59 tests
+cd backend && pytest -q                            # 61 tests
 cd backend && python -m app.analytics.questions    # the research questions
 ```
 
@@ -94,7 +94,7 @@ sign-in gated to four Columbia domains, the feed with live facet counts, item
 detail with the gallery and the two contact shapes, photo upload, posting, owner
 actions (sold / reserved / relist / take down), saves, the three collections
 behind the avatar menu (my listings, saved items, inbox) with append-on-scroll
-paging, profile, sign-out and deactivation. 59 backend tests, including the
+paging, profile, sign-out and deactivation. 61 backend tests, including the
 disclosure test.
 
 Not built yet: `/search`, `/inbox`, the mobile filter sheet, the lightbox, the

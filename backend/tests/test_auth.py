@@ -61,7 +61,12 @@ def test_link_is_single_use_and_expires(client):
 def test_request_link_is_indistinguishable_for_unknown_addresses(client):
     r = client.post("/auth/request-link", json={"email": "ghost@columbia.edu"})
     assert r.status_code == 202
-    assert r.json() == {"sent": True, "resend_available_in_seconds": 60, "dev_link": None}
+    assert r.json() == {
+        "sent": True,
+        "resend_available_in_seconds": 60,
+        "dev_link": None,
+        "delivery_error": None,
+    }
 
 
 def test_resend_is_locked_for_a_minute(client):

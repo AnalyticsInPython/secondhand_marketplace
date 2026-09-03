@@ -17,6 +17,7 @@ export default function SignInPage() {
   const [sent, setSent] = useState(false);
   const [alreadyPending, setAlreadyPending] = useState(false);
   const [devLink, setDevLink] = useState<string | null>(null);
+  const [deliveryError, setDeliveryError] = useState<string | null>(null);
   const [wait, setWait] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -40,7 +41,8 @@ export default function SignInPage() {
       // 60-second resend lock (state B6) has not expired. The outstanding link
       // is still valid, so keep any dev link we already have.
       setSent(true);
-      setAlreadyPending(!res.sent);
+      setDeliveryError(res.delivery_error);
+      setAlreadyPending(!res.sent && !res.delivery_error);
       if (res.dev_link) setDevLink(res.dev_link);
       setWait(res.resend_available_in_seconds);
     } catch (e) {
@@ -94,6 +96,12 @@ export default function SignInPage() {
                 </a>
                 .
               </p>
+              {deliveryError && (
+                <p className="rounded-[10px] border border-danger/30 bg-danger/5 p-3 text-[12px] leading-[17px] text-danger">
+                  The email could not be sent: {deliveryError} Check the mail settings in backend/.env.
+                  The development link below still works.
+                </p>
+              )}
               {devLink && (
                 <div className="flex flex-col gap-1 rounded-[10px] border border-dashed border-light bg-surface p-3">
                   <p className="text-[10.5px] font-semibold tracking-[0.06em] text-ink3">

@@ -30,19 +30,25 @@ def _deliver(user: User, token: str) -> LinkSentOut:
     """Hand the link to the mailer. In dev mode it is also returned so the team
     can click through without an inbox."""
     link = f"{settings.frontend_origin}/signin/verify?token={token}"
+    delivery_error: str | None = None
     try:
         mailer.send_login_link(to=user.email, link=link, username=user.username)
     except mailer.MailError as exc:
-        # The user gets a calm message; the operator gets the real reason.
+        # The operator gets the real reason either way.
         print(f"[mail] delivery to {user.email} failed: {exc}", file=sys.stderr, flush=True)
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE,
-            "We could not send the email right now. Try again in a minute.",
-        ) from exc
+        if not settings.email_dev_mode:
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "We could not send the email right now. Try again in a minute.",
+            ) from exc
+        # In dev the link is shown on screen anyway, so a broken mailer is a
+        # warning on the page rather than a locked door.
+        delivery_error = str(exc)
     return LinkSentOut(
-        sent=True,
+        sent=delivery_error is None,
         resend_available_in_seconds=settings.login_resend_lock_seconds,
         dev_link=link if settings.email_dev_mode else None,
+        delivery_error=delivery_error,
     )
 
 

@@ -37,7 +37,7 @@ link. To receive it in a real Columbia inbox, set `EMAIL_BACKEND=resend` with a
 ## Tests
 
 ```bash
-pytest -q          # 59 tests, throwaway SQLite, no network
+pytest -q          # 61 tests, throwaway SQLite, no network
 ```
 
 `tests/test_disclosure.py` is the one test the build spec says must exist: no

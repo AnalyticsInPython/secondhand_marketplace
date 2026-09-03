@@ -106,6 +106,10 @@ class LinkSentOut(BaseModel):
     # Dev only: the link we would have emailed, so the team can click through
     # without an inbox. None when EMAIL_DEV_MODE is off.
     dev_link: str | None = None
+    # Dev only: why the email itself could not be sent (bad SMTP password, no
+    # API key). The link above still works, so a misconfigured mailer never
+    # locks the team out of a local build.
+    delivery_error: str | None = None
 
 
 class EmailCheckOut(BaseModel):

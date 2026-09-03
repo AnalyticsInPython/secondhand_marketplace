@@ -87,13 +87,18 @@ export const api = {
     request<EmailCheck>(`/auth/email-check?email=${encodeURIComponent(email)}`),
 
   signup: (body: Record<string, unknown>) =>
-    request<{ sent: boolean; dev_link: string | null }>("/auth/signup", {
+    request<{ sent: boolean; dev_link: string | null; delivery_error: string | null }>("/auth/signup", {
       method: "POST",
       body: JSON.stringify(body),
     }),
 
   requestLink: (email: string) =>
-    request<{ sent: boolean; resend_available_in_seconds: number; dev_link: string | null }>(
+    request<{
+      sent: boolean;
+      resend_available_in_seconds: number;
+      dev_link: string | null;
+      delivery_error: string | null;
+    }>(
       "/auth/request-link",
       { method: "POST", body: JSON.stringify({ email }) },
     ),
