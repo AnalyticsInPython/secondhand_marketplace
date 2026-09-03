@@ -25,7 +25,9 @@ from ..enums import (
 )
 from ..models import Enquiry, FilterEvent, Listing, ListingPhoto, ListingView, Save, Upload, User
 from ..schemas import (
+    EnquirerOut,
     EnquiryIn,
+    MarkSoldIn,
     EnquiryOut,
     FacetCounts,
     ListingCreate,
@@ -328,12 +330,89 @@ def update_listing(
     return feed.to_detail(db, listing, user)
 
 
+@router.get("/{listing_id}/enquirers", response_model=list[EnquirerOut])
+def listing_enquirers(
+    listing_id: str,
+    user: User = Depends(current_user),
+    db: DbSession = Depends(get_db),
+):
+    """Who has contacted the seller about this listing. Owner only.
+
+    Feeds the "who bought it?" step when marking an item sold. No disclosure
+    problem: the seller already received these enquiries, so this tells them
+    nothing they do not have in their inbox — and it is refused to anyone else.
+    """
+    listing = _own_listing(db, listing_id, user)
+    rows = db.execute(
+        select(Enquiry, User)
+        .join(User, Enquiry.buyer_id == User.id)
+        .where(Enquiry.listing_id == listing.id)
+        .order_by(Enquiry.created_at.desc())
+    ).all()
+
+    seen: set[str] = set()
+    out: list[EnquirerOut] = []
+    for enquiry, buyer in rows:
+        if buyer.id in seen:
+            continue
+        seen.add(buyer.id)
+        out.append(EnquirerOut(
+            id=buyer.id,
+            username=buyer.username,
+            display_name=buyer.display_name,
+            channel=enquiry.channel,
+            enquired_at=enquiry.created_at,
+        ))
+    return out
+
+
 @router.post("/{listing_id}/sold", status_code=status.HTTP_204_NO_CONTENT)
-def mark_sold(listing_id: str, user: User = Depends(current_user), db: DbSession = Depends(get_db)):
-    """Shorthand for PATCH {status: sold} — the event the whole analysis counts."""
+def mark_sold(
+    listing_id: str,
+    payload: MarkSoldIn | None = None,
+    user: User = Depends(current_user),
+    db: DbSession = Depends(get_db),
+):
+    """Mark it sold, optionally recording who bought it and for how much.
+
+    The body is optional and every field in it is optional, so the original
+    no-body call still works exactly as before.
+
+    Why record a buyer at all: without one, a completed sale has only a date,
+    and questions like "how far did things travel" or "do people buy from
+    others at their own school" cannot be asked. The buyer must be someone who
+    enquired — that is both the honest constraint (you cannot sell to someone
+    who never contacted you through the app) and what keeps the enquiry-to-sale
+    funnel meaningful. Selling to a friend is represented by leaving it unset.
+    """
     listing = _own_listing(db, listing_id, user)
     listing.status = ListingStatus.SOLD
     listing.sold_at = datetime.now(timezone.utc)
+
+    if payload is not None and payload.buyer_id:
+        if payload.buyer_id == user.id:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY, "You cannot buy your own listing"
+            )
+        enquired = db.scalar(
+            select(Enquiry).where(
+                Enquiry.listing_id == listing.id, Enquiry.buyer_id == payload.buyer_id
+            )
+        )
+        if enquired is None:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "Pick someone who contacted you about this listing, or leave it blank.",
+            )
+        listing.buyer_id = payload.buyer_id
+
+    # Falls back to the asking price: the seller marked it sold, so that is what
+    # it went for unless they said otherwise.
+    if payload is not None and payload.sold_price_cents is not None:
+        listing.sold_price_cents = max(0, payload.sold_price_cents)
+    else:
+        listing.sold_price_cents = listing.price_cents
+
     db.commit()
 
 
