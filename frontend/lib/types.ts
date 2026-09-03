@@ -200,3 +200,88 @@ export interface Enquirer {
   channel: "email" | "sms";
   enquired_at: string;
 }
+
+/** Everything the dashboard draws. Aggregated in Python — see routers/insights.py. */
+export interface Insights {
+  overview: {
+    members: number; listings: number; sold: number; active: number;
+    views: number; saves: number; enquiries: number; sessions: number; searches: number;
+  };
+  activity: { week: string; posted: number; sold: number; per_seller: number }[];
+  funnel: { stage: string; count: number; share_of_views: number; conversion: number | null }[];
+  sales_by_distance: { band: string; sales: number }[];
+  searches: {
+    total: number; empty: number; empty_share: number;
+    top: { query: string; searches: number; empty: number; clicks: number }[];
+    empty_top: { query: string; searches: number }[];
+  };
+  price_by_condition: {
+    condition: string; listings: number; p25: number; median: number; p75: number;
+  }[];
+  inventory_age: {
+    buckets: { band: string; listings: number }[];
+    total: number;
+    stale_share: number;
+  };
+  days_to_sell: {
+    category: string; listings: number; sold: number;
+    sell_through: number; median_days: number | null;
+  }[];
+  categories: {
+    category: string; listings: number; sold: number;
+    sell_through: number; median_price: number;
+  }[];
+  badges: {
+    arms: { arm: string; impressions: number; contacts: number; rate: number }[];
+    planted: boolean;
+  };
+  trust_curve: {
+    steps: {
+      label: string; depth: number; median: number; p25: number; p75: number;
+      share_of_all: number; below_threshold: number;
+    }[];
+    sample: number;
+    total: number;
+    threshold: number;
+  };
+  overlap: {
+    levels: { shared: number; impressions: number; contacts: number; rate: number }[];
+  };
+  buyer_vs_viewer: {
+    listings: number;
+    buyer_mean: number;
+    viewer_mean: number;
+    lift: number | null;
+    by_attribute: { attribute: string; buyers: number; viewers: number }[];
+  };
+}
+
+export type TopLinePeriod = "day" | "week" | "month";
+
+/** One time bucket. Every count is at its own event time — a listing counts in
+ *  the bucket it was posted, a sale in the bucket it was sold. */
+export interface TopLineBucket {
+  start: string;
+  listed: number;
+  sellers: number;
+  sold: number;
+  gmv_cents: number;
+  buyers: number;
+  new_members: number;
+  views: number;
+  active_members: number;
+  saves: number;
+  contacts: number;
+  searches: number;
+  sell_through: number;
+  contact_rate: number;
+}
+
+export interface TopLine {
+  period: TopLinePeriod;
+  buckets: TopLineBucket[];
+  current: TopLineBucket;
+  previous: TopLineBucket;
+  /** Percent change against the previous complete bucket; null when it was zero. */
+  change: Partial<Record<keyof TopLineBucket, number | null>>;
+}

@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .db import create_all
-from .routers import auth, listings, photos, reference, users
+from .routers import auth, insights, listings, photos, reference, users
 
 
 @asynccontextmanager
@@ -45,6 +45,7 @@ app.include_router(users.router)
 app.include_router(listings.router)
 app.include_router(photos.router)
 app.include_router(reference.router)
+app.include_router(insights.router)
 
 # Processed photos. Nothing here carries metadata (services/photos.py).
 settings.media_dir.mkdir(parents=True, exist_ok=True)

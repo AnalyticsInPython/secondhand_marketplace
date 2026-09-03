@@ -7,6 +7,9 @@
 
 import type {
   Country,
+  Insights,
+  TopLine,
+  TopLinePeriod,
   Enquirer,
   EmailCheck,
   EnquiryRow,
@@ -179,6 +182,10 @@ export const api = {
         (value ? `&value=${encodeURIComponent(value)}` : ""),
       { method: "POST" },
     ).catch(() => {}), // analytics must never break the UI
+
+  // ---- dashboard
+  insights: () => request<Insights>("/insights"),
+  topline: (period: TopLinePeriod) => request<TopLine>(`/insights/topline?period=${period}`),
 
   // ---- reference
   zips: (q: string) => request<ZipResult[]>(`/zips?q=${encodeURIComponent(q)}`),
