@@ -58,6 +58,8 @@ export default function InsightsPage() {
         {error && <p className="text-[14px] text-danger">{error}</p>}
         {!data && !error && <p className="py-20 text-center text-ink2">Loading…</p>}
 
+        {data && <Provenance data={data} />}
+
         <TopLineSection top={top} period={period} onPeriod={setPeriod} />
 
         {data && (
@@ -304,6 +306,51 @@ function TopLineChart({ buckets }: { buckets: TopLine["buckets"] }) {
         )}
       </svg>
     </div>
+  );
+}
+
+/** Where the numbers come from. Counts are what is loaded, not what was generated. */
+function Provenance({ data }: { data: Insights }) {
+  const o = data.overview;
+  const actions = o.views + o.saves + o.enquiries + o.searches;
+
+  const layers: { label: string; value: string; note: string }[] = [
+    {
+      label: "People",
+      value: o.members.toLocaleString(),
+      note: "ZIP, country, school and year — the four attributes the product filters on.",
+    },
+    {
+      label: "Listings",
+      value: o.listings.toLocaleString(),
+      note: "1,500 generated; 150 are external-marketplace rows the schema no longer holds, so 1,350 are live.",
+    },
+    {
+      label: "Actions",
+      value: actions.toLocaleString(),
+      note: `${o.views.toLocaleString()} views · ${o.saves.toLocaleString()} saves · ${o.enquiries.toLocaleString()} contacts · ${o.searches.toLocaleString()} searches, in ${o.sessions.toLocaleString()} visits.`,
+    },
+  ];
+
+  return (
+    <section className="mb-7 overflow-hidden rounded-[16px] border border-light bg-tint">
+      <div className="px-6 pt-5">
+        <SectionLabel>SEEDED DATA</SectionLabel>
+      </div>
+      <div className="mt-3 grid gap-px bg-light md:grid-cols-3">
+        {layers.map((layer) => (
+          <div key={layer.label} className="bg-tint px-6 py-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.07em] text-ink2">
+              {layer.label}
+            </p>
+            <p className="mt-0.5 text-[26px] font-bold tracking-[-0.02em] tabular-nums text-deep">
+              {layer.value}
+            </p>
+            <p className="mt-1 text-[12px] leading-[18px] text-ink2">{layer.note}</p>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
