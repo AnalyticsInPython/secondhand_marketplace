@@ -70,7 +70,7 @@ def build(seed, n_users, n_listings, n_external, now):
     people = U.generate_users(rng, n_users, now)
     rows, photos = L.generate_listings(rng, people, n_internal, n_external, now)
     manifest, notes = edge_cases.install(rng, people, rows, photos, now)
-    views, saves, enquiries, filter_events = events.generate_events(
+    views, saves, enquiries, filter_events, searches = events.generate_events(
         rng, people, rows, photos, now)
 
     return {
@@ -81,6 +81,7 @@ def build(seed, n_users, n_listings, n_external, now):
         "saves": saves,
         "enquiries": enquiries,
         "filter_events": filter_events,
+        "searches": searches,
         "manifest": manifest,
         "notes": notes,
     }
@@ -103,6 +104,15 @@ def _report(bundle, now):
     print("  saves              %6d" % len(bundle["saves"]))
     print("  enquiries          %6d" % len(bundle["enquiries"]))
     print("  filter_events      %6d" % len(bundle["filter_events"]))
+    print("  search_events      %6d" % len(bundle["searches"]))
+
+    sessions = len({r["session_id"] for r in bundle["views"] if r.get("session_id")})
+    sold = [l for l in bundle["listings"] if l["status"] == "sold"]
+    attributed = [l for l in sold if l.get("buyer_id")]
+    print("\n  sessions           %6d" % sessions)
+    print("  sold listings      %6d   (%d with an identified buyer, %.0f%%)"
+          % (len(sold), len(attributed),
+             100.0 * len(attributed) / len(sold) if sold else 0))
 
     v, s, e = len(bundle["views"]), len(bundle["saves"]), len(bundle["enquiries"])
     if e:
@@ -234,13 +244,14 @@ def main(argv=None):
     print("-" * 72)
     failures = validate.validate(
         bundle["users"], bundle["listings"], bundle["photos"], bundle["views"],
-        bundle["saves"], bundle["enquiries"], bundle["filter_events"], now)
+        bundle["saves"], bundle["enquiries"], bundle["filter_events"], now,
+        bundle["searches"])
     if failures:
         for failure in failures:
             print("  FAIL  %s" % failure)
         print("\n  %d invariant(s) failed — not exporting." % len(failures))
         return 1
-    print("  all 16 invariant groups pass")
+    print("  all 19 invariant groups pass")
 
     if args.no_export:
         print("\n--no-export: nothing written")
@@ -260,7 +271,7 @@ def main(argv=None):
     written = export.export_all(
         args.out, bundle["users"], bundle["listings"], bundle["photos"],
         bundle["views"], bundle["saves"], bundle["enquiries"],
-        bundle["filter_events"], zip_rows)
+        bundle["filter_events"], zip_rows, bundle["searches"])
 
     print("\n" + "-" * 72)
     print("WRITTEN to %s/" % args.out)

@@ -83,7 +83,9 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 
-    listings: Mapped[list[Listing]] = relationship(back_populates="seller")
+    listings: Mapped[list[Listing]] = relationship(
+        back_populates="seller", foreign_keys="Listing.seller_id"
+    )
 
     @property
     def can_receive_sms(self) -> bool:
@@ -123,7 +125,24 @@ class Listing(Base):
     # The event the whole analysis counts.
     sold_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    seller: Mapped[User] = relationship(back_populates="listings")
+    # --- who bought it, and for how much (added 2026-09-03, analysis) ---
+    #
+    # Both nullable, and nothing existing writes them: the mark-sold endpoint
+    # that ignores these columns keeps working exactly as before.
+    #
+    # NULL is meaningful, not missing data. Plenty of sales go to a friend or to
+    # someone who never enquired, and "what share of sales are attributable to an
+    # in-app enquiry" is itself one of the questions worth asking.
+    #
+    # sold_price_cents exists because price_cents is overwritten when a seller
+    # edits the listing, so the asking price at the moment of sale is otherwise
+    # lost — and the in-group discount question depends on it.
+    buyer_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), index=True)
+    sold_price_cents: Mapped[int | None] = mapped_column(Integer)
+
+    # Two foreign keys point at users now, so the join has to be spelled out.
+    seller: Mapped[User] = relationship(back_populates="listings", foreign_keys=[seller_id])
+    buyer: Mapped[User | None] = relationship(foreign_keys=[buyer_id])
     photos: Mapped[list[ListingPhoto]] = relationship(
         back_populates="listing", cascade="all, delete-orphan", order_by="ListingPhoto.position"
     )
@@ -213,6 +232,12 @@ class ListingView(Base):
     # day one so the causal analysis is possible without a retrofit.
     badges_shown: Mapped[bool] = mapped_column(Boolean, default=True)
     viewed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+    # Ties one visit together: impressions, filter toggles and the enquiry
+    # that follows are otherwise only joinable by user and a time window,
+    # which is the weakest step in the funnel analysis. Nullable, so events
+    # written by code that does not set it are still valid.
+    session_id: Mapped[str | None] = mapped_column(String(36), index=True)
+
 
 
 class Save(Base):
@@ -223,6 +248,12 @@ class Save(Base):
     listing_id: Mapped[str] = mapped_column(ForeignKey("listings.id"), index=True)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    # Ties one visit together: impressions, filter toggles and the enquiry
+    # that follows are otherwise only joinable by user and a time window,
+    # which is the weakest step in the funnel analysis. Nullable, so events
+    # written by code that does not set it are still valid.
+    session_id: Mapped[str | None] = mapped_column(String(36), index=True)
+
 
 
 class Enquiry(Base):
@@ -233,6 +264,12 @@ class Enquiry(Base):
     buyer_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     channel: Mapped[EnquiryChannel] = mapped_column(_enum(EnquiryChannel, "enquiry_channel"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+    # Ties one visit together: impressions, filter toggles and the enquiry
+    # that follows are otherwise only joinable by user and a time window,
+    # which is the weakest step in the funnel analysis. Nullable, so events
+    # written by code that does not set it are still valid.
+    session_id: Mapped[str | None] = mapped_column(String(36), index=True)
+
 
 
 class FilterEvent(Base):
@@ -249,4 +286,42 @@ class FilterEvent(Base):
     filter_key: Mapped[str] = mapped_column(String(40), index=True)
     value: Mapped[str | None] = mapped_column(String(80))
     result_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+    # Ties one visit together: impressions, filter toggles and the enquiry
+    # that follows are otherwise only joinable by user and a time window,
+    # which is the weakest step in the funnel analysis. Nullable, so events
+    # written by code that does not set it are still valid.
+    session_id: Mapped[str | None] = mapped_column(String(36), index=True)
+
+
+class SearchEvent(Base):
+    """What people typed into the search box, and what came back.
+
+    Added 2026-09-03 for the analysis. Entirely new — nothing else references
+    it, so existing code is unaffected.
+
+    `filter_events` already records structured filter toggles, but a free-text
+    query is a different act and answers different questions: what people look
+    for by name, which searches come back empty, and whether searching converts
+    better than browsing. None of that is reconstructable after the fact, which
+    is the argument for logging it now.
+
+    The query is stored as typed, lowercased and trimmed. It is a search term on
+    a marketplace, not personal data — but if that ever changes, this is the one
+    table to review.
+    """
+
+    __tablename__ = "search_events"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), index=True)
+    session_id: Mapped[str | None] = mapped_column(String(36), index=True)
+
+    query: Mapped[str] = mapped_column(String(120), index=True)
+    result_count: Mapped[int] = mapped_column(Integer, default=0)
+
+    # Did the search lead anywhere? Set when the searcher opens a listing from
+    # the results, which is what separates a useful search from a dead one.
+    clicked_listing_id: Mapped[str | None] = mapped_column(ForeignKey("listings.id"))
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)

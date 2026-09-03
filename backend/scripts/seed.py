@@ -28,6 +28,7 @@ from datetime import datetime, timedelta, timezone
 from app.db import SessionLocal, create_all, reset_all
 from app.enums import Category, Condition, Grade, ListingStatus, School
 from app.models import (
+    SearchEvent,
     Enquiry,
     FilterEvent,
     Listing,
@@ -130,6 +131,11 @@ def _listing(r: dict) -> Listing:
         enquiry_count=_int(r["enquiry_count"]),
         posted_at=_dt(r["posted_at"]),
         sold_at=_dt(r["sold_at"]),
+        # Added 2026-09-03. Nullable: a sold listing with no buyer went to
+        # someone who never enquired, which is a real and measurable case.
+        buyer_id=_text(r.get("buyer_id", "")),
+        sold_price_cents=(int(r["sold_price_cents"])
+                          if r.get("sold_price_cents") else None),
     )
 
 
@@ -149,8 +155,12 @@ def _view(r: dict) -> ListingView:
         listing_id=r["listing_id"],
         viewer_id=_text(r["viewer_id"]),
         surface=r["surface"],
-        badges_shown=True,  # the experiment was not running when this corpus was made
+        # The corpus carries the coin flip since 2026-09-03, so the experiment
+        # has two arms. Falls back to True for an older CSV without the column,
+        # which is what the previous hardcoded value meant.
+        badges_shown=_bool(r.get("badges_shown", "true")),
         viewed_at=_dt(r["viewed_at"]),
+        session_id=_text(r.get("session_id", "")),
     )
 
 
@@ -160,6 +170,7 @@ def _save(r: dict) -> Save:
         listing_id=r["listing_id"],
         user_id=r["user_id"],
         created_at=_dt(r["created_at"]),
+        session_id=_text(r.get("session_id", "")),
     )
 
 
@@ -170,6 +181,7 @@ def _enquiry(r: dict) -> Enquiry:
         buyer_id=r["buyer_id"],
         channel=r["channel"],
         created_at=_dt(r["created_at"]),
+        session_id=_text(r.get("session_id", "")),
     )
 
 
@@ -180,6 +192,19 @@ def _filter_event(r: dict) -> FilterEvent:
         filter_key=r["filter_key"],
         value=_text(r["value"]),
         result_count=_int(r["result_count"]),
+        created_at=_dt(r["created_at"]),
+        session_id=_text(r.get("session_id", "")),
+    )
+
+
+def _search_event(r: dict) -> SearchEvent:
+    return SearchEvent(
+        id=r["id"],
+        user_id=_text(r["user_id"]),
+        session_id=_text(r.get("session_id", "")),
+        query=r["query"],
+        result_count=_int(r["result_count"]),
+        clicked_listing_id=_text(r["clicked_listing_id"]),
         created_at=_dt(r["created_at"]),
     )
 
@@ -258,6 +283,16 @@ def load(do_reset: bool, *, limit: int | None = None, demo_email: str | None = N
         events = _read("filter_events.csv")
         _insert(db, "filter_events.csv", events, _filter_event)
         counts["filter_events"] = len(events)
+
+        # Searches reference a listing only when the searcher clicked one, and
+        # that listing may have been skipped with the external tier — so clear
+        # the click rather than dropping an otherwise valid search.
+        searches = _read("search_events.csv")
+        for row in searches:
+            if row.get("clicked_listing_id") and row["clicked_listing_id"] not in kept:
+                row["clicked_listing_id"] = ""
+        _insert(db, "search_events.csv", searches, _search_event)
+        counts["search_events"] = len(searches)
 
         if demo_email:
             _add_demo_account(db, demo_email)

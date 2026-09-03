@@ -191,3 +191,12 @@ export interface ListingInput {
   zip_code: string;
   photo_urls: string[];
 }
+
+/** Someone who contacted the seller — the candidates when marking an item sold. */
+export interface Enquirer {
+  id: string;
+  username: string;
+  display_name: string | null;
+  channel: "email" | "sms";
+  enquired_at: string;
+}

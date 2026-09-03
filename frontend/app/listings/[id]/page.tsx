@@ -28,7 +28,7 @@ import {
   relativeTime,
   SUBCATEGORY_LABELS,
 } from "@/lib/format";
-import type { ListingDetail, ListingStatus, Me } from "@/lib/types";
+import type { Enquirer, ListingDetail, ListingStatus, Me } from "@/lib/types";
 
 export default function ListingPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -355,6 +355,36 @@ function OwnerActions({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The "who bought it?" step. Null means the panel is closed.
+  const [enquirers, setEnquirers] = useState<Enquirer[] | null>(null);
+
+  async function openSold() {
+    setError(null);
+    setBusy(true);
+    try {
+      setEnquirers(await api.enquirers(listing.id));
+    } catch {
+      // If the list cannot be fetched, still let them mark it sold — recording
+      // the buyer is worth having, not worth blocking a sale over.
+      setEnquirers([]);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmSold(buyer: string | null) {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.markSold(listing.id, buyer);
+      onChange(await api.listing(listing.id));
+      setEnquirers(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not mark it sold");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function set(status: ListingStatus) {
     setBusy(true);
@@ -376,9 +406,48 @@ function OwnerActions({
         Buyers see this page without these controls. Marking it sold keeps the page reachable but
         removes it from every feed.
       </p>
+      {enquirers !== null && (
+        <div className="flex flex-col gap-2.5 rounded-[12px] border border-line bg-muted p-4">
+          <p className="text-[14px] font-bold">Who bought it?</p>
+          <p className="text-[12.5px] leading-[18px] text-ink2">
+            {enquirers.length > 0
+              ? "Recording the buyer is what lets us measure how far things travel and who trades with whom. It is never shown to anyone else."
+              : "Nobody has contacted you about this listing, so there is nobody to pick. You can still mark it sold."}
+          </p>
+
+          {enquirers.map((person) => (
+            <button
+              key={person.id}
+              type="button"
+              disabled={busy}
+              onClick={() => confirmSold(person.id)}
+              className="flex items-center justify-between rounded-[10px] border border-line bg-surface px-3.5 py-3 text-left hover:border-deep disabled:opacity-60"
+            >
+              <span className="flex flex-col">
+                <span className="text-[14px] font-semibold">@{person.username}</span>
+                <span className="text-[12px] text-ink2">
+                  {person.channel === "sms" ? "Texted" : "Emailed"} you{" "}
+                  {relativeTime(person.enquired_at)}
+                </span>
+              </span>
+              <span className="text-[12.5px] font-semibold text-deep">Sold to them</span>
+            </button>
+          ))}
+
+          <div className="flex flex-wrap gap-2 pt-1">
+            <Button variant="ghost" disabled={busy} onClick={() => confirmSold(null)}>
+              Sold to someone else
+            </Button>
+            <Button variant="ghost" disabled={busy} onClick={() => setEnquirers(null)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-2">
         {s !== "sold" && (
-          <Button disabled={busy} onClick={() => set("sold")}>
+          <Button disabled={busy} onClick={() => openSold()}>
             Mark as sold
           </Button>
         )}

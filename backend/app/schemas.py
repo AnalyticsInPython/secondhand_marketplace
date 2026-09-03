@@ -327,6 +327,27 @@ class EnquiryRow(BaseModel):
     seller_username: str | None = None
 
 
+class EnquirerOut(BaseModel):
+    """Someone who contacted the seller — the candidate list when marking sold."""
+
+    id: str
+    username: str
+    display_name: str | None = None
+    channel: EnquiryChannel
+    enquired_at: datetime
+
+
+class MarkSoldIn(BaseModel):
+    """Optional body for POST /listings/{id}/sold.
+
+    Every field is optional and so is the body itself, so the call that existed
+    before this — no body at all — behaves exactly as it did.
+    """
+
+    buyer_id: str | None = None
+    sold_price_cents: int | None = Field(default=None, ge=0)
+
+
 class FacetCount(BaseModel):
     key: str
     label: str

@@ -7,6 +7,7 @@
 
 import type {
   Country,
+  Enquirer,
   EmailCheck,
   EnquiryRow,
   EnumsRef,
@@ -132,7 +133,17 @@ export const api = {
     request<ListingDetail>("/listings", { method: "POST", body: JSON.stringify(body) }),
   updateListing: (id: string, body: Partial<ListingInput> & { status?: ListingStatus }) =>
     request<ListingDetail>(`/listings/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
-  markSold: (id: string) => request<void>(`/listings/${id}/sold`, { method: "POST" }),
+  enquirers: (id: string) => request<Enquirer[]>(`/listings/${id}/enquirers`),
+
+  /**
+   * `buyer` is optional: leaving it out records the sale without a buyer, which
+   * is what happens when something goes to a friend or off-platform.
+   */
+  markSold: (id: string, buyer?: string | null) =>
+    request<void>(`/listings/${id}/sold`, {
+      method: "POST",
+      body: JSON.stringify({ buyer_id: buyer ?? null }),
+    }),
   save: (id: string) => request<void>(`/listings/${id}/save`, { method: "POST" }),
   unsave: (id: string) => request<void>(`/listings/${id}/save`, { method: "DELETE" }),
 
