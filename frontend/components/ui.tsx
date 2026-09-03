@@ -469,6 +469,15 @@ export function ChevronLeftIcon({ className }: IconProps) {
   );
 }
 
+/** Points down; rotate it 180° for the open state of a dropdown. */
+export function ChevronIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className ?? "h-4 w-4"} {...stroke} strokeWidth={2.2}>
+      <path d="M5 9l7 7 7-7" />
+    </svg>
+  );
+}
+
 export function PlusIcon({ className }: IconProps) {
   return (
     <svg viewBox="0 0 24 24" className={className ?? "h-4 w-4"} {...stroke} strokeWidth={2.2}>

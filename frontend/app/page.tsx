@@ -236,7 +236,18 @@ export default function FeedPage() {
 
   return (
     <>
-      <TopNav me={me} query={query} onQuery={setQuery} />
+      <TopNav
+        me={me}
+        query={query}
+        onQuery={setQuery}
+        // Distances and facet counts are measured from the viewer's ZIP on the
+        // server, so a move has to refetch. Touching `filters` is what triggers
+        // it; a full reload would lose the filters you had set.
+        onZipChange={(updated) => {
+          setMe(updated);
+          setFilters((f) => ({ ...(f ?? { limit: 24 }), offset: 0 }));
+        }}
+      />
 
       {/* Mobile header */}
       <header className="border-b border-line bg-surface px-4 pb-3 pt-4 md:hidden">
@@ -260,7 +271,7 @@ export default function FeedPage() {
                   setQuery("");
                   setFilters({ limit: 24, radius_mi: me?.default_radius_mi });
                 }}
-                className="text-[13px] font-semibold text-deep"
+                className="text-[13px] font-semibold text-deep transition-colors hover:text-primary hover:underline hover:underline-offset-2"
               >
                 Reset
               </button>
