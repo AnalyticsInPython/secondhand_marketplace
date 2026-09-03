@@ -8,10 +8,10 @@
 import type {
   Country,
   EmailCheck,
+  EnquiryRow,
   EnumsRef,
   FacetCounts,
   FeedFilters,
-  ListingCard,
   ListingDetail,
   ListingInput,
   ListingPage,
@@ -32,14 +32,22 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Turn a FastAPI error body into something a person can read.
+ *
+ * A raised HTTPException gives `detail` as a string, but a Pydantic validation
+ * failure gives an array of objects, which stringified to "[object Object]".
+ */
 function detailMessage(body: unknown, fallback: string): string {
-  if (body && typeof body === "object" && "detail" in body) {
-    const d = (body as { detail: unknown }).detail;
-    if (typeof d === "string") return d;
-    // Pydantic validation errors: take the first message.
-    if (Array.isArray(d) && d[0] && typeof d[0].msg === "string") {
-      return String(d[0].msg).replace(/^Value error, /, "");
-    }
+  const detail = (body as { detail?: unknown })?.detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((d) => (typeof d === "string" ? d : (d as { msg?: string })?.msg))
+      .filter(Boolean)
+      // Pydantic prefixes its own "Value error, "; the rest is our copy.
+      .map((m) => String(m).replace(/^Value error,\s*/, ""));
+    if (messages.length) return messages.join(" ");
   }
   return fallback;
 }
@@ -105,8 +113,11 @@ export const api = {
   updateMe: (body: Partial<Me>) =>
     request<Me>("/me", { method: "PATCH", body: JSON.stringify(body) }),
   deactivate: () => request<void>("/me/deactivate", { method: "POST" }),
-  myListings: () => request<ListingCard[]>("/me/listings"),
-  savedListings: () => request<ListingCard[]>("/me/saved"),
+
+  // ---- the avatar menu's three collections
+  myListings: (offset = 0) => request<ListingPage>(`/me/listings?offset=${offset}`),
+  mySaves: (offset = 0) => request<ListingPage>(`/me/saves?offset=${offset}`),
+  myEnquiries: () => request<EnquiryRow[]>("/me/enquiries"),
 
   // ---- listings
   listings: (filters: FeedFilters) => request<ListingPage>(`/listings${qs(filters)}`),

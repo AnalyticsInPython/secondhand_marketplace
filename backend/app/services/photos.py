@@ -90,7 +90,11 @@ def process(data: bytes) -> Processed:
 
 
 def absolute_url(url: str | None) -> str | None:
-    """Photo URLs are stored relative to the API origin and made absolute here."""
+    """Uploads live under this API's /media and get its origin prepended.
+
+    Anything else is passed through untouched: the seeded corpus points at
+    `/photos/<listing>/<n>.webp`, which Next serves from frontend/public.
+    """
     if url is None:
         return None
-    return f"{settings.public_origin}{url}" if url.startswith("/") else url
+    return f"{settings.public_origin}{url}" if url.startswith("/media/") else url

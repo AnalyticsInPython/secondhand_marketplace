@@ -89,7 +89,7 @@ def test_email_check_endpoint(client):
         "suggested_school": "cbs",
     }
     bad = client.get("/auth/email-check", params={"email": "someone@gmail.com"}).json()
-    assert bad["allowed"] is False and "Columbia students only" in bad["reason"]
+    assert bad["allowed"] is False and "open to" in bad["reason"]
 
 
 def test_signup_and_request_link_refuse_outside_addresses(client):
@@ -107,7 +107,7 @@ def test_signup_and_request_link_refuse_outside_addresses(client):
     assert r.status_code == 422
     r = client.post("/auth/request-link", json={"email": "x@gmail.com"})
     assert r.status_code == 422
-    assert "Columbia students only" in r.json()["detail"]
+    assert "open to" in r.json()["detail"]
 
 
 def test_gsb_addresses_can_sign_up(client):

@@ -307,6 +307,22 @@ class ListingPage(BaseModel):
     next_cursor: str | None = None
 
 
+class EnquiryRow(BaseModel):
+    """One row of the inbox (UX_SPEC.md §6.6, avatar menu).
+
+    There is no in-app chat, so an "inbox" is a record of contacts made rather
+    than a thread list: which listing, which channel, when. The listing travels
+    as a full card so the row renders with the same badges and distance as it
+    would in the feed.
+    """
+
+    id: str
+    channel: EnquiryChannel
+    created_at: datetime
+    listing: ListingCard
+    seller_username: str | None = None
+
+
 class FacetCount(BaseModel):
     key: str
     label: str

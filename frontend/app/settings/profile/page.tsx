@@ -7,8 +7,7 @@ import { useEffect, useState } from "react";
 import { MobileTabBar, TopNav } from "@/components/TopNav";
 import { Button, Card, Field, Input, PinIcon, SectionLabel, Segmented, Select, Toggle } from "@/components/ui";
 import { api } from "@/lib/api";
-import { price, relativeTime, STATUS_LABELS } from "@/lib/format";
-import type { Country, EnumsRef, Grade, ListingCard, Me } from "@/lib/types";
+import type { Country, EnumsRef, Grade, Me } from "@/lib/types";
 
 /**
  * Profile & account — UX_SPEC.md §6.6.
@@ -25,15 +24,11 @@ export default function ProfilePage() {
   const [error, setError] = useState<string | null>(null);
   const [countries, setCountries] = useState<Country[]>([]);
   const [enums, setEnums] = useState<EnumsRef | null>(null);
-  const [mine, setMine] = useState<ListingCard[]>([]);
-  const [saved, setSaved] = useState<ListingCard[]>([]);
 
   useEffect(() => {
     api.me().then(setMe).catch(() => router.replace("/signin"));
     api.countries().then(setCountries).catch(() => setCountries([]));
     api.enums().then(setEnums).catch(() => setEnums(null));
-    api.myListings().then(setMine).catch(() => setMine([]));
-    api.savedListings().then(setSaved).catch(() => setSaved([]));
   }, [router]);
 
   if (!me) return <div className="p-10 text-ink2">Loading…</div>;
@@ -268,37 +263,27 @@ export default function ProfilePage() {
           </Button>
         </Card>
 
-        {/* My listings */}
+        {/* Collections */}
         <Card className="flex flex-col gap-4 p-6 md:p-7">
-          <div className="flex items-center">
-            <SectionLabel>MY LISTINGS</SectionLabel>
-            <Link href="/sell" className="ml-auto text-[13px] font-semibold text-deep">
-              Sell an item
-            </Link>
+          <SectionLabel>YOUR COLLECTIONS</SectionLabel>
+          <div className="grid gap-3 md:grid-cols-3">
+            {(
+              [
+                ["/my-listings", "My listings", "Everything you have posted, in every status."],
+                ["/saved", "Saved items", "Every listing you tapped the heart on."],
+                ["/inbox", "Inbox", "Every seller you have contacted."],
+              ] as const
+            ).map(([href, label, blurb]) => (
+              <Link
+                key={href}
+                href={href}
+                className="flex flex-col gap-1 rounded-[12px] border border-line p-4 transition-colors hover:bg-muted"
+              >
+                <span className="text-[14.5px] font-semibold text-ink">{label}</span>
+                <span className="text-[12.5px] leading-[18px] text-ink2">{blurb}</span>
+              </Link>
+            ))}
           </div>
-          {mine.length === 0 ? (
-            <p className="text-[13.5px] text-ink2">Nothing posted yet.</p>
-          ) : (
-            <ul className="flex flex-col">
-              {mine.map((l) => (
-                <ListingRow key={l.id} listing={l} />
-              ))}
-            </ul>
-          )}
-        </Card>
-
-        {/* Saved */}
-        <Card className="flex flex-col gap-4 p-6 md:p-7">
-          <SectionLabel>SAVED ITEMS</SectionLabel>
-          {saved.length === 0 ? (
-            <p className="text-[13.5px] text-ink2">Tap the heart on a listing to keep it here.</p>
-          ) : (
-            <ul className="flex flex-col">
-              {saved.map((l) => (
-                <ListingRow key={l.id} listing={l} />
-              ))}
-            </ul>
-          )}
         </Card>
 
         {/* Leaving */}
@@ -320,36 +305,5 @@ export default function ProfilePage() {
 
       <MobileTabBar />
     </>
-  );
-}
-
-function ListingRow({ listing }: { listing: ListingCard }) {
-  const tone: Record<ListingCard["status"], string> = {
-    active: "bg-ok/10 text-ok",
-    reserved: "bg-warn/10 text-warn",
-    sold: "bg-muted text-ink2",
-    draft: "bg-muted text-ink2",
-    delisted: "bg-muted text-ink3",
-  };
-  return (
-    <li className="border-t border-line first:border-t-0">
-      <Link href={`/listings/${listing.id}`} className="flex items-center gap-3.5 py-3 hover:bg-muted/60">
-        <span className="photo-placeholder h-12 w-12 shrink-0 overflow-hidden rounded-[9px] bg-muted">
-          {listing.cover_photo_url && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={listing.cover_photo_url} alt="" className="h-full w-full object-cover" />
-          )}
-        </span>
-        <span className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate text-[14px] font-semibold text-ink">{listing.title}</span>
-          <span className="text-[11.5px] text-ink3">
-            {price(listing.price_cents, listing.is_free)} · {listing.zip_code} · {relativeTime(listing.posted_at)}
-          </span>
-        </span>
-        <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold tracking-[0.02em] ${tone[listing.status]}`}>
-          {STATUS_LABELS[listing.status].toUpperCase()}
-        </span>
-      </Link>
-    </li>
   );
 }

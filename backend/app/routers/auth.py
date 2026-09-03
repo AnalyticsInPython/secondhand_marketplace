@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sys
+
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session as DbSession
 
@@ -31,6 +33,8 @@ def _deliver(user: User, token: str) -> LinkSentOut:
     try:
         mailer.send_login_link(to=user.email, link=link, username=user.username)
     except mailer.MailError as exc:
+        # The user gets a calm message; the operator gets the real reason.
+        print(f"[mail] delivery to {user.email} failed: {exc}", file=sys.stderr, flush=True)
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             "We could not send the email right now. Try again in a minute.",

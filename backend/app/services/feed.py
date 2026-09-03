@@ -90,8 +90,11 @@ def where_clauses(viewer: User, f: FeedFilters, exclude: frozenset[str] = frozen
         conds.append(Listing.zip_code.in_(geo.zips_within(viewer.zip_code, f.radius_mi)))
 
     # Trust filters — "same X" means the seller shares X with *this* viewer.
+    # same_zip compares the SELLER's ZIP, not the pickup ZIP: it is what §5.3
+    # computes the SAME ZIP badge from, so the filter and the badge cannot
+    # disagree when a seller lists something for pickup elsewhere.
     if f.same_zip and on("same_zip"):
-        conds.append(Listing.zip_code == viewer.zip_code)
+        conds.append(Seller.zip_code == viewer.zip_code)
     if f.same_nationality and on("same_nationality"):
         conds.append(Seller.nationality == viewer.nationality)
     if f.same_school and on("same_school"):
@@ -170,7 +173,7 @@ def facets(db: DbSession, viewer: User, f: FeedFilters) -> FacetCounts:
         _joined(
             select(
                 func.count(Listing.id),
-                func.count(case((Listing.zip_code == viewer.zip_code, 1))),
+                func.count(case((Seller.zip_code == viewer.zip_code, 1))),
                 func.count(case((Seller.nationality == viewer.nationality, 1))),
                 func.count(case((Seller.school == viewer.school, 1))),
             )

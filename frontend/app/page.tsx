@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { DistanceSlider } from "@/components/DistanceSlider";
 import { ItemCard, ItemRow } from "@/components/ItemCard";
@@ -47,6 +47,8 @@ export default function FeedPage() {
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState<FeedFilters | null>(null);
   const [query, setQuery] = useState("");
+  const [loadingMore, setLoadingMore] = useState(false);
+  const sentinel = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     api
@@ -83,6 +85,39 @@ export default function FeedPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  /**
+   * Load the next page and append it. Filters reset to the first page, but
+   * scrolling adds — with a real button as the trigger so it works without an
+   * IntersectionObserver and stays keyboard-reachable.
+   */
+  const loadMore = useCallback(async () => {
+    if (!filters || loadingMore || items.length >= total) return;
+    setLoadingMore(true);
+    try {
+      const page = await api.listings({ ...filters, offset: items.length });
+      // Guard against a filter change landing mid-flight and duplicating rows.
+      setItems((current) => {
+        const seen = new Set(current.map((i) => i.id));
+        return [...current, ...page.items.filter((i) => !seen.has(i.id))];
+      });
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [filters, items.length, total, loadingMore]);
+
+  useEffect(() => {
+    const node = sentinel.current;
+    if (!node) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) void loadMore();
+      },
+      { rootMargin: "600px" },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [loadMore]);
 
   function patch(next: Partial<FeedFilters>) {
     setFilters((f) => ({ ...(f ?? {}), ...next, offset: 0 }));
@@ -337,14 +372,29 @@ export default function FeedPage() {
             </div>
           )}
 
-          {filters?.offset !== undefined || total > items.length ? (
-            <Pager
-              offset={filters?.offset ?? 0}
-              limit={filters?.limit ?? 24}
-              total={total}
-              onPage={(offset) => setFilters((f) => ({ ...(f ?? {}), offset }))}
-            />
-          ) : null}
+          {items.length > 0 && (
+            <div ref={sentinel} className="flex flex-col items-center gap-3 px-4 py-10 md:px-0">
+              {items.length < total ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => void loadMore()}
+                    disabled={loadingMore}
+                    className="rounded-[10px] border border-line bg-surface px-5 py-3 text-[14px] font-semibold text-deep disabled:opacity-60"
+                  >
+                    {loadingMore ? "Loading…" : "Load more"}
+                  </button>
+                  <p className="text-[12.5px] text-ink3">
+                    Showing {items.length} of {total}
+                  </p>
+                </>
+              ) : (
+                <p className="text-[12.5px] text-ink3">
+                  That is all {total} {total === 1 ? "item" : "items"}.
+                </p>
+              )}
+            </div>
+          )}
         </section>
       </main>
 
@@ -397,42 +447,5 @@ function EmptyState({
         )}
       </div>
     </Card>
-  );
-}
-
-function Pager({
-  offset,
-  limit,
-  total,
-  onPage,
-}: {
-  offset: number;
-  limit: number;
-  total: number;
-  onPage: (offset: number) => void;
-}) {
-  if (total <= limit) return null;
-  const page = Math.floor(offset / limit) + 1;
-  const pages = Math.ceil(total / limit);
-  return (
-    <div className="flex items-center justify-center gap-3 px-4 pb-6 text-[13px] text-ink2 md:px-0">
-      <button
-        disabled={page <= 1}
-        onClick={() => onPage(Math.max(0, offset - limit))}
-        className="rounded-[9px] border border-line-strong bg-surface px-3 py-2 font-semibold text-ink disabled:cursor-not-allowed disabled:text-ink3"
-      >
-        Previous
-      </button>
-      <span>
-        Page {page} of {pages}
-      </span>
-      <button
-        disabled={page >= pages}
-        onClick={() => onPage(offset + limit)}
-        className="rounded-[9px] border border-line-strong bg-surface px-3 py-2 font-semibold text-ink disabled:cursor-not-allowed disabled:text-ink3"
-      >
-        Next
-      </button>
-    </div>
   );
 }

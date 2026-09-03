@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Logo } from "@/components/Logo";
 import { Button, Card, Field, Input, MailIcon, ShieldIcon } from "@/components/ui";
 import { api } from "@/lib/api";
-import { DOMAIN_ERROR, isAllowedEmail } from "@/lib/domains";
+import { EMAIL_DOMAIN_LIST, EMAIL_REJECTION, isColumbiaEmail } from "@/lib/domains";
 
 /**
  * Sign in — UX_SPEC.md §6.2. There is no password anywhere in this product.
@@ -15,12 +15,13 @@ import { DOMAIN_ERROR, isAllowedEmail } from "@/lib/domains";
 export default function SignInPage() {
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
+  const [alreadyPending, setAlreadyPending] = useState(false);
   const [devLink, setDevLink] = useState<string | null>(null);
   const [wait, setWait] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const valid = isAllowedEmail(email);
+  const valid = isColumbiaEmail(email);
 
   // Resend stays locked for a minute — long enough for the first mail to
   // arrive, short enough that a stuck user is not stranded.
@@ -35,8 +36,12 @@ export default function SignInPage() {
     setBusy(true);
     try {
       const res = await api.requestLink(email.trim());
+      // `sent: false` is not a failure: a link was issued moments ago and the
+      // 60-second resend lock (state B6) has not expired. The outstanding link
+      // is still valid, so keep any dev link we already have.
       setSent(true);
-      setDevLink(res.dev_link);
+      setAlreadyPending(!res.sent);
+      if (res.dev_link) setDevLink(res.dev_link);
       setWait(res.resend_available_in_seconds);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
@@ -61,7 +66,7 @@ export default function SignInPage() {
             </p>
           </div>
 
-          <Field label="Columbia email" error={email && !valid ? DOMAIN_ERROR : undefined}>
+          <Field label="Columbia email" error={email && !valid ? EMAIL_REJECTION : undefined}>
             <Input
               value={email}
               onChange={setEmail}
@@ -75,9 +80,14 @@ export default function SignInPage() {
 
           {sent ? (
             <div className="flex flex-col gap-3 rounded-[12px] border border-light bg-tint p-5">
-              <p className="text-[16px] font-bold text-deep">Check your Columbia inbox</p>
+              <p className="text-[16px] font-bold text-deep">
+                {alreadyPending ? "A link is already on its way" : "Check your Columbia inbox"}
+              </p>
               <p className="text-[12.5px] leading-[19px] text-ink2">
-                The link works once and expires in 15 minutes. Nothing arriving? Check Spam, and
+                {alreadyPending
+                  ? "We sent one moments ago — use that one. It works once and expires in 15 minutes."
+                  : "The link works once and expires in 15 minutes."}{" "}
+                Nothing arriving? Check Spam, and
                 if you have never signed up, the address has no account yet —{" "}
                 <a href="/signup" className="font-semibold text-deep">
                   create one
@@ -109,8 +119,8 @@ export default function SignInPage() {
           <div className="flex items-start gap-2.5 rounded-[12px] bg-muted p-4 text-[12.5px] leading-[18px] text-ink2">
             <ShieldIcon className="mt-0.5 h-4 w-4 shrink-0 text-ink3" />
             <span>
-              The link works once and expires after 15 minutes. Only Columbia addresses — columbia.edu,
-              gsb, cumc and tc — are accepted.
+              The link works once and expires after 15 minutes. Only Columbia addresses are accepted:{" "}
+              {EMAIL_DOMAIN_LIST}.
             </span>
           </div>
 

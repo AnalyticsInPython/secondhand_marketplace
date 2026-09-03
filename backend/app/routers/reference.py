@@ -48,7 +48,7 @@ def list_countries():
 def enums():
     """One call the frontend makes at boot to fill every picker."""
     return {
-        "allowed_email_domains": sorted(settings.domains),
+        "allowed_email_domains": list(settings.domains_ordered),
         "categories": [
             {
                 "value": c.value,

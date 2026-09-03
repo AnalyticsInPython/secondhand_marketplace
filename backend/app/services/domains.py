@@ -4,6 +4,10 @@ Four domains, agreed by the team on 2026-09-02 (docs/DECISIONS.md), held in
 `ALLOWED_EMAIL_DOMAINS` rather than in code so a fifth school is an environment
 change. The match is exact on the domain part: `columbia.edu.evil.com` and
 `law.columbia.edu` are both refused.
+
+This is the only place the rule lives. Sign-up (schemas.py), sign-in
+(routers/auth.py) and the live email check all call it, and /reference/enums
+publishes the list so the frontend validates against exactly what is enforced.
 """
 
 from __future__ import annotations
@@ -50,8 +54,10 @@ def rejection_reason(email: str, domains: frozenset[str] | None = None) -> str |
         return None
     if domain_of(email) is None:
         return "Enter a full email address."
-    listed = ", ".join("@" + d for d in sorted(domains or allowed_domains()))
-    return f"Columbia students only. Use one of {listed}."
+    ordered = sorted(domains) if domains is not None else settings.domains_ordered
+    listed = ", ".join("@" + d for d in ordered)
+    # Mirrored verbatim by EMAIL_REJECTION in frontend/lib/domains.ts.
+    return f"Columbia Market is open to {listed} addresses."
 
 
 def suggested_school(email: str) -> School | None:

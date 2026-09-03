@@ -89,7 +89,7 @@ backend/
     analytics/
       frames.py        database → pandas
       questions.py     the research questions
-  scripts/seed.py      fake data (UX_SPEC §9), --demo-email for your own account
+  scripts/seed.py      loads ../data/*.csv (Kobe's corpus); --demo-email, --limit
   tests/               59 tests; run with `pytest`
 ```
 
@@ -189,6 +189,25 @@ erDiagram
 Seller attributes are never copied onto a listing; they are joined at read
 time, so a profile edit corrects every badge at once. Deleting is a status
 change, never a row deletion.
+
+## Seed data
+
+`seed/` at the repo root is Kobe's deterministic generator (standard library
+only) and `data/` its committed output: 1,000 members, 1,500 listings, photos
+and the four event tables, plus a loadable `seed.sql`. `backend/scripts/seed.py`
+loads the CSVs through the ORM. Two things happen on the way in:
+
+- **The external tier is dropped.** The generator still emits 150 listings with
+  `source != 'internal'`; the schema has no such column, so those rows and every
+  view, save and enquiry that references them are skipped and counted.
+- **`--demo-email you@columbia.edu`** adds your own account with three listings,
+  and **`--limit N`** loads only the first N listings for a fast local database.
+
+Seeded photos are root-relative (`/photos/<listing>/<n>.webp`) and served by
+Next.js from `frontend/public/photos`; they are not committed and are rebuilt
+with `scripts/fetch_photos.py` (real photos) or `scripts/make_photos.py`
+(gradients). Uploads made through the app are served by the API from `/media`.
+`absolute_url()` in `services/photos.py` tells the two apart.
 
 ## Configuration
 

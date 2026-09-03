@@ -30,6 +30,7 @@ def test_feed_requires_sign_in(client):
 
 def test_feed_carries_computed_badges_and_distance():
     w = _world()
+    assert w["v"].get("/listings").json()["items"][0]["status"] == "active"
     page = w["v"].get("/listings").json()
     assert page["total"] == 3  # the sold chair is out
     by_title = {i["title"]: i for i in page["items"]}
@@ -165,7 +166,8 @@ def test_owner_edits_and_status_transitions():
     assert v.get(f"/listings/{lid}").status_code == 404
     assert a.get(f"/listings/{lid}").status_code == 200
     mine = a.get("/me/listings").json()
-    assert {m["title"]: m["status"] for m in mine}["IKEA desk, oak"] == "delisted"
+    assert mine["total"] == 2
+    assert {m["title"]: m["status"] for m in mine["items"]}["IKEA desk, oak"] == "delisted"
 
     # Photos: add a second, make it the cover.
     second = upload_photo(a)
@@ -181,7 +183,8 @@ def test_save_and_unsave():
     assert v.post(f"/listings/{lid}/save").status_code == 204  # idempotent
     d = v.get(f"/listings/{lid}").json()
     assert d["is_saved"] is True and d["save_count"] == 1
-    assert [s["id"] for s in v.get("/me/saved").json()] == [lid]
+    saved = v.get("/me/saves").json()
+    assert saved["total"] == 1 and [s["id"] for s in saved["items"]] == [lid]
     assert v.delete(f"/listings/{lid}/save").status_code == 204
     assert v.get(f"/listings/{lid}").json()["save_count"] == 0
 
@@ -192,6 +195,10 @@ def test_enquiry_is_the_only_place_contact_details_appear():
     r = v.post(f"/listings/{w['a_desk']['id']}/enquiry", json={"channel": "email"})
     assert r.status_code == 200 and r.json() == {"channel": "email", "address": "alice@columbia.edu", "phone": None}
     assert v.get(f"/listings/{w['a_desk']['id']}").json()["enquiry_count"] == 1
+    inbox = v.get("/me/enquiries").json()
+    assert [(row["listing"]["id"], row["channel"], row["seller_username"]) for row in inbox] == [
+        (w["a_desk"]["id"], "email", "alice")
+    ]
 
     # Bob has no number: the SMS channel is refused even if asked for.
     r = v.post(f"/listings/{w['b_lamp']['id']}/enquiry", json={"channel": "sms"})

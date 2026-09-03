@@ -98,6 +98,34 @@ flag is always true. Flip it on and half of feed requests hide badges; the
 analysis in `app/analytics/questions.py` (Q1) compares contact rates between
 the two arms.
 
+## 2026-09-03 · Merged with main (PRs #5, #6, #7)
+
+Three teammate PRs landed while the backend branch was open. What was kept
+from each, and what was reconciled:
+
+- **Jae's four-domain allowlist (#6)** — same decision, same env variable.
+  His `app/emails.py` and the backend's `services/domains.py` implemented the
+  same rule; only the latter survives, with his declaration-ordered message
+  ("Columbia Market is open to @columbia.edu, @gsb.columbia.edu, … addresses.")
+  and his `frontend/lib/domains.ts` as the frontend mirror. The backend module
+  also does the school prefill for `GET /auth/email-check`.
+- **Kobe's seed corpus (#5) and photos (#7)** — `seed/` and `data/` are the
+  only generator now; the backend's own generator is gone and
+  `scripts/seed.py` is a loader. The corpus still carries the external tier
+  (150 rows); the loader skips them and every event that references them.
+  **Open for Kobe:** make `--external 0` the generator default so the corpus
+  matches the schema. Seeded photos are served by Next from
+  `frontend/public/photos`; uploads through the app are served by the API from
+  `/media`. Two more ZIPs (11354 Flushing, 11375 Forest Hills) joined the geo
+  table because the corpus uses them.
+- **Kobe's collections (#7)** — `/my-listings`, `/saved`, `/inbox` pages, the
+  avatar menu, append-on-scroll paging and the status pill on cards are kept.
+  The endpoints are `GET /me/listings`, `GET /me/saves`, `GET /me/enquiries`
+  (his names, paginated). The profile page links to them instead of listing
+  inline. His `same_zip` fix — compare the seller's ZIP, which is what the
+  badge uses — is applied in `services/feed.py` for both the filter and the
+  facet count.
+
 ---
 
 ## Still open

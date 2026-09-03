@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Logo } from "@/components/Logo";
 import { Button, Field, Input, MailIcon, PinIcon, Segmented, Select, ShieldIcon } from "@/components/ui";
 import { api } from "@/lib/api";
-import { DOMAIN_ERROR, isAllowedEmail } from "@/lib/domains";
+import { EMAIL_DOMAIN_LIST, EMAIL_REJECTION, isColumbiaEmail } from "@/lib/domains";
 import type { Country, EnumsRef, Grade, ZipResult } from "@/lib/types";
 
 /**
@@ -35,7 +35,7 @@ export default function SignUpPage() {
   const [sent, setSent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const emailValid = isAllowedEmail(email);
+  const emailValid = isColumbiaEmail(email);
 
   useEffect(() => {
     api.countries().then(setCountries).catch(() => setCountries([]));
@@ -163,8 +163,8 @@ export default function SignUpPage() {
 
           <Field
             label="Columbia email"
-            hint="columbia.edu, gsb, cumc or tc addresses. We send a verification link — no password to remember."
-            error={email && !emailValid ? DOMAIN_ERROR : undefined}
+            hint={`Any of ${EMAIL_DOMAIN_LIST} can register. We send a verification link — no password to remember.`}
+            error={email && !emailValid ? EMAIL_REJECTION : undefined}
           >
             <Input
               value={email}

@@ -23,8 +23,9 @@ are `{"detail": "..."}` (or Pydantic's list for validation failures).
 | GET | `/me` | Own profile — the only payload that ever contains your email and phone. |
 | PATCH | `/me` | Any of `username, display_name, phone, phone_contact_enabled, nationality, school, grade, zip_code, default_radius_mi, default_filter_same_*`. Blank phone clears it. |
 | POST | `/me/deactivate` | Reversible by signing in again. |
-| GET | `/me/listings` | Everything you posted, every status. |
-| GET | `/me/saved` | Listings you saved. |
+| GET | `/me/listings?limit=&offset=` | Everything you posted, every status, newest first. A `ListingPage`. |
+| GET | `/me/saves?limit=&offset=` | Listings you saved, newest save first. Sold and reserved stay. A `ListingPage`. |
+| GET | `/me/enquiries` | The inbox: `[{id, channel, created_at, listing, seller_username}]`. A record of contacts made, not a thread list. |
 
 ## Listings
 
@@ -66,7 +67,7 @@ can_receive_sms}`.
 | Method | Path | Does |
 |---|---|---|
 | POST | `/photos` | multipart `file` (JPG/PNG/WebP ≤ 10 MB) → 201 `{url, width, height}`. Resized to 1600 px, WebP, metadata stripped. Put the `url` in `photo_urls`. |
-| GET | `/media/{name}.webp` | The processed file. |
+| GET | `/media/{name}.webp` | The processed file. Seeded listings instead point at `/photos/<listing>/<n>.webp`, served by the Next.js app from `frontend/public/photos`. |
 
 ## Reference
 

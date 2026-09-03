@@ -12,8 +12,18 @@ import { HeartIcon, MatchBadge } from "./ui";
  * Badges come straight from `item.badges`. Do not compute them here: the client
  * is deliberately not given the seller's attributes to compare.
  */
+const STATUS_PILL: Partial<Record<Item["status"], [string, string]>> = {
+  reserved: ["RESERVED", "bg-warn text-white"],
+  sold: ["SOLD", "bg-[var(--color-overlay)] text-white"],
+  draft: ["DRAFT", "bg-ink3 text-white"],
+  delisted: ["TAKEN DOWN", "bg-ink3 text-white"],
+};
+
 export function ItemCard({ item }: { item: Item }) {
-  const reserved = item.status === "reserved";
+  // Status wins over condition when the listing is not on sale: §6.4 gives
+  // reserved and sold their own rendering, and on My listings the owner needs
+  // to tell a draft from a live post at a glance.
+  const pill = STATUS_PILL[item.status];
   return (
     <Link
       href={`/listings/${item.id}`}
@@ -34,10 +44,10 @@ export function ItemCard({ item }: { item: Item }) {
         <div className="relative flex items-start justify-between">
           <span
             className={`rounded-full px-2.5 py-1 text-[10px] font-semibold tracking-[0.02em] ${
-              reserved ? "bg-warn text-white" : "bg-white text-deep"
+              pill ? pill[1] : "bg-white text-deep"
             }`}
           >
-            {reserved ? "RESERVED" : CONDITION_LABELS[item.condition].toUpperCase()}
+            {pill ? pill[0] : CONDITION_LABELS[item.condition].toUpperCase()}
           </span>
           <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white text-ink2">
             <HeartIcon className="h-4 w-4" />

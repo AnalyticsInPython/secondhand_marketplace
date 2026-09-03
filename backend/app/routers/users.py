@@ -1,16 +1,20 @@
-"""Profile & account — UX_SPEC.md §6.6, plus the two lists behind the avatar
-menu: my listings and saved items."""
+"""Profile & account — UX_SPEC.md §6.6, plus the three collections behind the
+avatar menu: my listings, saved items and the inbox.
+
+All three reuse `feed.to_card`, so a card carries identical badges, distance and
+overlap-only disclosure wherever it appears.
+"""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session as DbSession, selectinload
 
 from ..db import get_db
 from ..enums import UserStatus
-from ..models import Listing, Save, User
-from ..schemas import ListingCard, MeOut, ProfileUpdate
+from ..models import Enquiry, Listing, Save, User
+from ..schemas import EnquiryRow, ListingPage, MeOut, ProfileUpdate
 from ..security import current_user
 from ..services import feed, geo
 
@@ -60,25 +64,93 @@ def deactivate(user: User = Depends(current_user), db: DbSession = Depends(get_d
     db.commit()
 
 
-@router.get("/listings", response_model=list[ListingCard])
-def my_listings(user: User = Depends(current_user), db: DbSession = Depends(get_db)):
-    """Everything I have posted, every status, newest first."""
+# --------------------------------------------------------------------------
+# Collections
+# --------------------------------------------------------------------------
+
+
+def _page(items, total: int, limit: int, offset: int) -> ListingPage:
+    return ListingPage(
+        items=items,
+        total=total,
+        next_cursor=str(offset + limit) if offset + limit < total else None,
+    )
+
+
+@router.get("/listings", response_model=ListingPage)
+def my_listings(
+    limit: int = Query(default=24, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    user: User = Depends(current_user),
+    db: DbSession = Depends(get_db),
+):
+    """Everything this member has posted, in every status.
+
+    Deliberately unfiltered: drafts, sold and taken-down items are exactly what
+    the owner came here to see, even though the feed hides them all.
+    """
+    base = select(Listing).where(Listing.seller_id == user.id)
+    total = db.scalar(select(func.count()).select_from(base.subquery())) or 0
     rows = db.scalars(
-        select(Listing)
-        .where(Listing.seller_id == user.id)
-        .options(selectinload(Listing.photos))
+        base.options(selectinload(Listing.photos))
         .order_by(Listing.posted_at.desc())
+        .offset(offset)
+        .limit(limit)
     ).all()
-    return [feed.to_card(listing, user, user) for listing in rows]
+    return _page([feed.to_card(listing, user, user) for listing in rows], total, limit, offset)
 
 
-@router.get("/saved", response_model=list[ListingCard])
-def saved_listings(user: User = Depends(current_user), db: DbSession = Depends(get_db)):
-    rows = db.execute(
-        select(Listing, Save.created_at)
-        .join(Save, Save.listing_id == Listing.id)
-        .where(Save.user_id == user.id)
-        .options(selectinload(Listing.photos), selectinload(Listing.seller))
+@router.get("/saves", response_model=ListingPage)
+def my_saves(
+    limit: int = Query(default=24, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    user: User = Depends(current_user),
+    db: DbSession = Depends(get_db),
+):
+    """Saved items, newest save first.
+
+    A save outlives the listing's availability, so sold and reserved rows stay
+    here — vanishing silently when a seller marks something sold would read as
+    data loss.
+    """
+    base = select(Listing).join(Save, Save.listing_id == Listing.id).where(Save.user_id == user.id)
+    total = db.scalar(select(func.count()).select_from(base.subquery())) or 0
+    rows = db.scalars(
+        base.options(selectinload(Listing.photos), selectinload(Listing.seller))
         .order_by(Save.created_at.desc())
+        .offset(offset)
+        .limit(limit)
     ).all()
-    return [feed.to_card(listing, listing.seller, user) for listing, _ in rows]
+    return _page([feed.to_card(listing, listing.seller, user) for listing in rows], total, limit, offset)
+
+
+@router.get("/enquiries", response_model=list[EnquiryRow])
+def my_enquiries(
+    limit: int = Query(default=50, ge=1, le=200),
+    user: User = Depends(current_user),
+    db: DbSession = Depends(get_db),
+):
+    """The inbox: every listing this member has contacted a seller about.
+
+    There is no in-app chat (UX_SPEC.md §1), so this is a record of contacts
+    made, not a thread list. It is the honest version of an inbox for a product
+    whose contact step hands you an address and gets out of the way.
+    """
+    rows = db.execute(
+        select(Enquiry, Listing)
+        .join(Listing, Enquiry.listing_id == Listing.id)
+        .where(Enquiry.buyer_id == user.id)
+        .options(selectinload(Listing.photos), selectinload(Listing.seller))
+        .order_by(Enquiry.created_at.desc())
+        .limit(limit)
+    ).all()
+    return [
+        EnquiryRow(
+            id=enquiry.id,
+            channel=enquiry.channel,
+            created_at=enquiry.created_at,
+            listing=feed.to_card(listing, listing.seller, user),
+            seller_username=listing.seller.username if listing.seller else None,
+        )
+        for enquiry, listing in rows
+    ]

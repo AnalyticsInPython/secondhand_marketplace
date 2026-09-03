@@ -85,6 +85,8 @@ ZIPS: list[Zip] = [
     Zip("11372", "Jackson Heights", "Queens", 40.7517, -73.8832),
     Zip("11377", "Woodside", "Queens", 40.7449, -73.9052),
     Zip("11101", "Long Island City", "Queens", 40.7447, -73.9485),
+    Zip("11375", "Forest Hills", "Queens", 40.7210, -73.8458),
+    Zip("11354", "Flushing", "Queens", 40.7678, -73.8331),
     # ---- Brooklyn, northern and brownstone
     Zip("11222", "Greenpoint", "Brooklyn", 40.7282, -73.9470),
     Zip("11249", "Williamsburg (north)", "Brooklyn", 40.7175, -73.9612),

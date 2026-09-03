@@ -26,7 +26,7 @@ fi
 # ---- seed
 if [ "${1:-}" = "--reseed" ] || [ ! -f backend/columbia_market.db ]; then
   echo "▸ seeding (demo account: $DEMO_EMAIL)"
-  (cd backend && "$PWD/../$PY" -m scripts.seed --users 600 --listings 900 --reset --demo-email "$DEMO_EMAIL")
+  (cd backend && "$PWD/../$PY" -m scripts.seed --reset --demo-email "$DEMO_EMAIL")
 fi
 
 # ---- frontend environment
@@ -43,5 +43,6 @@ echo
 echo "  API   http://localhost:8000/docs"
 echo "  App   http://localhost:3000/signin"
 echo "  Sign in as $DEMO_EMAIL — the link appears on screen (EMAIL_DEV_MODE)."
+[ -d frontend/public/photos ] || echo "  Seeded photos are not on disk yet: python3 scripts/fetch_photos.py (or make_photos.py)"
 echo
 wait

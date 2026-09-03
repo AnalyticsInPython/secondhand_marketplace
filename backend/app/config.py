@@ -32,8 +32,13 @@ class Settings(BaseSettings):
     allowed_email_domains: str = "columbia.edu,gsb.columbia.edu,cumc.columbia.edu,tc.columbia.edu"
 
     @property
+    def domains_ordered(self) -> tuple[str, ...]:
+        """Declaration order, so every message lists them the same way."""
+        return tuple(d.strip().lower() for d in self.allowed_email_domains.split(",") if d.strip())
+
+    @property
     def domains(self) -> frozenset[str]:
-        return frozenset(d.strip().lower() for d in self.allowed_email_domains.split(",") if d.strip())
+        return frozenset(self.domains_ordered)
 
     # ---- Email. `console` prints the link, `resend` uses the Resend HTTP API,
     # `smtp` uses any SMTP relay. `email_dev_mode` additionally returns the

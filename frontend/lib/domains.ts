@@ -1,7 +1,15 @@
 /**
- * Which addresses may sign in. Mirrors ALLOWED_EMAIL_DOMAINS on the API
- * (backend/.env) — the API is the gate; this list only gives instant feedback
- * while the student is still typing. Keep the two in step (docs/DECISIONS.md).
+ * Which email addresses may register.
+ *
+ * The API is authoritative — `backend/app/emails.py` enforces the gate, and
+ * `/reference/enums` returns the same list under `email_domains`. This copy
+ * exists only so sign-up and sign-in can validate as you type, before any
+ * network call (UX_SPEC.md §6.1 asks for inline validation, not on submit).
+ * Keep the two in step.
+ *
+ * Matching is on the whole domain. A suffix test would reject
+ * `@gsb.columbia.edu` against a bare `columbia.edu`, which is the bug this
+ * replaced.
  */
 
 export const ALLOWED_EMAIL_DOMAINS = [
@@ -9,19 +17,16 @@ export const ALLOWED_EMAIL_DOMAINS = [
   "gsb.columbia.edu",
   "cumc.columbia.edu",
   "tc.columbia.edu",
-];
+] as const;
 
-export function emailDomain(email: string): string | null {
-  const trimmed = email.trim().toLowerCase();
-  const at = trimmed.indexOf("@");
-  if (at <= 0 || at !== trimmed.lastIndexOf("@")) return null;
-  const domain = trimmed.slice(at + 1);
-  return domain.length > 0 ? domain : null;
+/** `@a, @b, @c` — for hints and error copy. */
+export const EMAIL_DOMAIN_LIST = ALLOWED_EMAIL_DOMAINS.map((d) => `@${d}`).join(", ");
+
+/** Mirrors `emails.rejection_message()` on the API. */
+export const EMAIL_REJECTION = `Columbia Market is open to ${EMAIL_DOMAIN_LIST} addresses.`;
+
+export function isColumbiaEmail(email: string): boolean {
+  const parts = email.trim().toLowerCase().split("@");
+  if (parts.length !== 2 || !parts[0]) return false;
+  return (ALLOWED_EMAIL_DOMAINS as readonly string[]).includes(parts[1]);
 }
-
-export function isAllowedEmail(email: string): boolean {
-  const domain = emailDomain(email);
-  return domain !== null && ALLOWED_EMAIL_DOMAINS.includes(domain);
-}
-
-export const DOMAIN_ERROR = "Columbia addresses only — columbia.edu, gsb, cumc or tc.";
