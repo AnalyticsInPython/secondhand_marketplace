@@ -1,0 +1,82 @@
+LOWLIGHTS — working with Claude Code on Columbia Market
+Kobe Ko · ENGI 4503 Analytics in Python · data component
+
+
+Most of what went wrong for me was not bad code. It was Claude building exactly
+what I asked for, when what I asked for was vague — and never telling me so.
+The failures were quiet ones. Nothing crashed. I had to go and look.
+
+
+1. THE BUILD THAT ARRIVED TOO FAST
+
+I described the product in plain English and let Claude run in auto mode. Within
+minutes it came back with a complete, confident plan for the mock data — built
+on the wrong specification. It had found LionsListBuildSpec.pdf sitting in the
+repo and treated it as our brief. It was not; our spec was the Figma file. I
+noticed only because I recognised where the details had come from, and told it
+to ignore that file entirely.
+
+The same pattern produced a subtler version later. Claude proposed calibrating
+my data generator against a number printed in the Figma mockup — "612 results" —
+as an acceptance test. It sounded rigorous. Once the real spec landed and it
+actually did the arithmetic, roughly 17% of listings survive the default filter
+chain, so 612 survivors would need about 3,600 listings in radius against a
+corpus of 1,500. The target was impossible, and it had proposed it without
+checking.
+
+What actually went wrong: a request with ten open questions still produces one
+confident answer, because the agent resolves ambiguity silently rather than
+surfacing it. What I did: I stopped prompting in prose and started drafting a
+markdown spec with Claude in chat before any code was written. Using it as a
+thinking partner at the spec stage, not only as a builder at the code stage, is
+what changed my results.
+
+
+2. DATA THAT LOOKED RIGHT AND WAS USELESS
+
+I asked for fake users, listings and user actions to build the visualisations
+against. The output looked entirely plausible, and I built a dashboard on it.
+
+What tipped me off was a chart. "What people search for" showed the query
+"textbook" with 82 searches and zero results — while the catalogue held 272
+textbook listings. Nothing was broken. Search matches the title only, and the
+generator writes titles like "Corporate Finance (Berk) 5th ed.", so the word
+"textbook" appears in none of them. Every row was well formed and internally
+consistent; the corpus and the search feature simply did not know about each
+other.
+
+What actually went wrong: prose does not define a schema. I never said which
+categories, actions or title conventions mattered, so Claude invented all three,
+and invented them in two places that were never checked against each other.
+Right shape, wrong content — much harder to catch than an outright error,
+because nothing fails. What I did: gave it the full technical spec instead of a
+description, and iterated on the exact fields the visualisations needed.
+
+
+3. AN ANSWER FROM THE CODE, NOT FROM THE RUNNING SYSTEM
+
+I asked whether the dashboard was location-based. Claude said no — the
+aggregates are marketplace-wide and the signed-in user's ZIP is never used. I
+believed it, because it had just read the file.
+
+Then I changed my ZIP in the header and watched the numbers move. When I pushed
+back, it ran an actual before-and-after test and found that two panels do
+change: one curve moved from 149 to 125, because I am one of the 300 members it
+samples.
+
+What actually went wrong: it reasoned from function signatures — no viewer
+parameter, therefore not personalised — which was true about the code and false
+about the behaviour. Explanations that sound like verification are not
+verification. What I did: I now ask "what did you run to check that?" and treat
+anything else as a hypothesis.
+
+
+WHAT I WOULD KEEP
+
+Spend the first ten minutes on the spec, not on the prompt. Iterating on a
+markdown file is far cheaper than iterating on a generated codebase.
+
+All three of these were caught by me looking at the screen, not by the agent
+checking its own work. The one I still miss is the second type: output that is
+well formed and quietly wrong. Speed and confidence are not evidence of
+correctness.
