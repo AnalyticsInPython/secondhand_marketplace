@@ -30,7 +30,8 @@ class Failure:
         return "%-34s %s%s" % (self.rule, self.detail, tail)
 
 
-def validate(users, listings, photos, views, saves, enquiries, filter_events, now):
+def validate(users, listings, photos, views, saves, enquiries, filter_events, now,
+             searches=()):
     """Return a list of :class:`Failure`. Empty means the corpus is loadable."""
     failures: "list[Failure]" = []
 
@@ -276,5 +277,62 @@ def validate(users, listings, photos, views, saves, enquiries, filter_events, no
     offenders = [r for r in filter_events if r["user_id"] not in users_by_id]
     if offenders:
         fail("16 filter_events FK", "%d orphans" % len(offenders))
+
+    # -- 17 buyers and sale prices (added 2026-09-03) ------------------------
+    offenders = [l for l in listings
+                 if l.get("buyer_id") and l["status"] != "sold"]
+    if offenders:
+        fail("17 buyer only on sold", "%d unsold listings have a buyer" % len(offenders))
+    offenders = [l for l in listings
+                 if l.get("buyer_id") and l["buyer_id"] == l["seller_id"]]
+    if offenders:
+        fail("17 buyer is not the seller", "%d self-purchases" % len(offenders))
+    offenders = [l for l in listings if l.get("buyer_id") and l["buyer_id"] not in users_by_id]
+    if offenders:
+        fail("17 buyer FK resolves", "%d orphans" % len(offenders))
+    offenders = [l for l in listings
+                 if l.get("sold_price_cents") is not None and l["sold_price_cents"] < 0]
+    if offenders:
+        fail("17 sale price >= 0", "%d negative" % len(offenders))
+    # A buyer must have enquired first: buying without contacting the seller is
+    # not a path this product has.
+    contacted = {(e["buyer_id"], e["listing_id"]) for e in enquiries}
+    offenders = [l for l in listings
+                 if l.get("buyer_id") and (l["buyer_id"], l["id"]) not in contacted]
+    if offenders:
+        fail("17 buyer enquired first", "%d bought without contact" % len(offenders),
+             offenders[0]["id"][:8])
+
+    # -- 18 sessions ---------------------------------------------------------
+    for name, rows, key, stamp in (("listing_views", views, "viewer_id", "viewed_at"),
+                                   ("saves", saves, "user_id", "created_at"),
+                                   ("enquiries", enquiries, "buyer_id", "created_at")):
+        missing = [r for r in rows if r.get(key) and not r.get("session_id")]
+        if missing:
+            fail("18 %s has a session" % name, "%d rows without one" % len(missing))
+    # Every event in a session belongs to one person: a session that spans two
+    # users would silently break every funnel join.
+    owner: "dict[str, str]" = {}
+    for rows, key in ((views, "viewer_id"), (saves, "user_id"), (enquiries, "buyer_id"),
+                      (filter_events, "user_id"), (searches, "user_id")):
+        for r in rows:
+            sid, uid = r.get("session_id"), r.get(key)
+            if not sid or not uid:
+                continue
+            if owner.setdefault(sid, uid) != uid:
+                fail("18 session has one owner", "session %s spans two users" % sid[:8])
+                break
+
+    # -- 19 search events ----------------------------------------------------
+    offenders = [r for r in searches if r["result_count"] < 0]
+    if offenders:
+        fail("19 result_count >= 0", "%d negative" % len(offenders))
+    offenders = [r for r in searches
+                 if r["clicked_listing_id"] and r["clicked_listing_id"] not in listings_by_id]
+    if offenders:
+        fail("19 clicked listing resolves", "%d orphans" % len(offenders))
+    offenders = [r for r in searches if r["clicked_listing_id"] and r["result_count"] == 0]
+    if offenders:
+        fail("19 no click on an empty search", "%d rows" % len(offenders))
 
     return failures
