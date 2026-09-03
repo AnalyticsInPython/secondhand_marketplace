@@ -16,22 +16,48 @@ from __future__ import annotations
 import re
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
-from . import emails
 from .config import settings
 from .enums import (
+    SELLER_STATUSES,
     Category,
     Condition,
     EnquiryChannel,
     Grade,
     ListingStatus,
     School,
-    Source,
-    SortOrder,
+    subcategory_belongs_to,
 )
+from .services import countries, domains
 
 USERNAME_RE = re.compile(r"^[A-Za-z0-9._]{3,20}$")
+
+
+def _clean_username(v: str) -> str:
+    v = v.strip().lstrip("@")
+    if not USERNAME_RE.match(v):
+        raise ValueError("3–20 characters, letters, numbers, dots and underscores")
+    return v
+
+
+def _clean_phone(v: str | None) -> str | None:
+    """Blank means no number. Otherwise normalise to E.164-ish (+1 for 10 digits)."""
+    if v is None or not v.strip():
+        return None
+    digits = re.sub(r"\D", "", v)
+    if len(digits) == 10:
+        digits = "1" + digits
+    if not 10 <= len(digits) <= 15:
+        raise ValueError("Enter a phone number with the area code, e.g. +1 646 555 0142")
+    return "+" + digits
+
+
+def _clean_nationality(v: str) -> str:
+    v = v.strip().upper()
+    if not countries.is_valid(v):
+        raise ValueError("Pick a country from the list")
+    return v
 
 
 # ---------------------------------------------------------------- auth
@@ -41,7 +67,7 @@ class SignupIn(BaseModel):
     email: EmailStr
     username: str
     phone: str | None = None  # optional — UX_SPEC.md §5.1
-    nationality: str = Field(min_length=2, max_length=2)
+    nationality: str
     school: School
     grade: Grade
     zip_code: str = Field(pattern=r"^\d{5}$")
@@ -49,17 +75,25 @@ class SignupIn(BaseModel):
     @field_validator("email")
     @classmethod
     def columbia_only(cls, v: str) -> str:
-        if not emails.is_allowed(v):
-            raise ValueError(emails.rejection_message())
-        return v.lower()
+        reason = domains.rejection_reason(v)
+        if reason:
+            raise ValueError(reason)
+        return domains.normalize(v)
 
     @field_validator("username")
     @classmethod
     def valid_username(cls, v: str) -> str:
-        v = v.lstrip("@")
-        if not USERNAME_RE.match(v):
-            raise ValueError("3–20 characters, letters, numbers, dots and underscores")
-        return v
+        return _clean_username(v)
+
+    @field_validator("phone")
+    @classmethod
+    def valid_phone(cls, v: str | None) -> str | None:
+        return _clean_phone(v)
+
+    @field_validator("nationality")
+    @classmethod
+    def valid_nationality(cls, v: str) -> str:
+        return _clean_nationality(v)
 
 
 class RequestLinkIn(BaseModel):
@@ -70,8 +104,21 @@ class LinkSentOut(BaseModel):
     sent: bool
     resend_available_in_seconds: int
     # Dev only: the link we would have emailed, so the team can click through
-    # without an SMTP server. None when EMAIL_DEV_MODE is off.
+    # without an inbox. None when EMAIL_DEV_MODE is off.
     dev_link: str | None = None
+    # Dev only: why the email itself could not be sent (bad SMTP password, no
+    # API key). The link above still works, so a misconfigured mailer never
+    # locks the team out of a local build.
+    delivery_error: str | None = None
+
+
+class EmailCheckOut(BaseModel):
+    """Live validation for the email field (states A2/A3, B2/B3)."""
+
+    email: str
+    allowed: bool
+    reason: str | None = None
+    suggested_school: School | None = None
 
 
 # ---------------------------------------------------------------- users
@@ -105,10 +152,10 @@ class ProfileUpdate(BaseModel):
     immutable — changing it would mean a different account."""
 
     username: str | None = None
-    display_name: str | None = None
+    display_name: str | None = Field(default=None, max_length=80)
     phone: str | None = None
     phone_contact_enabled: bool | None = None
-    nationality: str | None = Field(default=None, min_length=2, max_length=2)
+    nationality: str | None = None
     school: School | None = None
     grade: Grade | None = None
     zip_code: str | None = Field(default=None, pattern=r"^\d{5}$")
@@ -122,12 +169,17 @@ class ProfileUpdate(BaseModel):
     @field_validator("username")
     @classmethod
     def valid_username(cls, v: str | None) -> str | None:
-        if v is None:
-            return v
-        v = v.lstrip("@")
-        if not USERNAME_RE.match(v):
-            raise ValueError("3–20 characters, letters, numbers, dots and underscores")
-        return v
+        return None if v is None else _clean_username(v)
+
+    @field_validator("phone")
+    @classmethod
+    def valid_phone(cls, v: str | None) -> str | None:
+        return _clean_phone(v)
+
+    @field_validator("nationality")
+    @classmethod
+    def valid_nationality(cls, v: str | None) -> str | None:
+        return None if v is None else _clean_nationality(v)
 
 
 class UsernameAvailability(BaseModel):
@@ -150,6 +202,12 @@ class SellerPublic(BaseModel):
     can_receive_sms: bool
 
 
+class PhotoOut(BaseModel):
+    url: str
+    width: int | None = None
+    height: int | None = None
+
+
 class ListingCard(BaseModel):
     """One card in the feed."""
 
@@ -161,31 +219,31 @@ class ListingCard(BaseModel):
     category: Category
     subcategory: str | None
     zip_code: str
+    neighbourhood: str | None
     distance_mi: float | None
     posted_at: datetime
     status: ListingStatus
     cover_photo_url: str | None
+    photo_count: int
     badges: list[str]
-    is_external: bool
-    source: Source
-    source_label: str
 
 
 class ListingDetail(ListingCard):
     description: str | None
     is_negotiable: bool
+    photos: list[PhotoOut]
     photo_urls: list[str]
     view_count: int
     save_count: int
     enquiry_count: int
-    external_url: str | None
+    sold_at: datetime | None
     seller: SellerPublic | None
     is_saved: bool = False
     is_owner: bool = False
 
 
 class ListingCreate(BaseModel):
-    title: str = Field(max_length=60)
+    title: str = Field(min_length=1, max_length=60)
     description: str | None = Field(default=None, max_length=1000)
     category: Category
     subcategory: str | None = None
@@ -194,13 +252,56 @@ class ListingCreate(BaseModel):
     is_free: bool = False
     is_negotiable: bool = False
     zip_code: str = Field(pattern=r"^\d{5}$")
-    photo_urls: list[str] = []
+    # At least one photo to publish (UX_SPEC.md §6.5); each must have been
+    # uploaded through POST /photos by the same member.
+    photo_urls: list[str] = Field(min_length=1, max_length=settings.max_photos_per_listing)
 
-    @field_validator("photo_urls")
+    @field_validator("title")
     @classmethod
-    def photo_limit(cls, v: list[str]) -> list[str]:
-        if len(v) > settings.max_photos_per_listing:
-            raise ValueError(f"At most {settings.max_photos_per_listing} photos")
+    def strip_title(cls, v: str) -> str:
+        v = " ".join(v.split())
+        if not v:
+            raise ValueError("Give the listing a title")
+        return v
+
+    @model_validator(mode="after")
+    def coherent(self) -> ListingCreate:
+        if not subcategory_belongs_to(self.subcategory, self.category):
+            raise ValueError(f"{self.subcategory!r} is not a {self.category.label()} subcategory")
+        if self.is_free:
+            self.price_cents = 0
+        elif self.price_cents <= 0:
+            raise ValueError('Enter a price, or tick "give it away for free". $0 on its own is ambiguous.')
+        return self
+
+
+class ListingUpdate(BaseModel):
+    """PATCH /listings/{id}. Owner only. Omitted fields are left alone."""
+
+    title: str | None = Field(default=None, min_length=1, max_length=60)
+    description: str | None = Field(default=None, max_length=1000)
+    category: Category | None = None
+    subcategory: str | None = None
+    condition: Condition | None = None
+    price_cents: int | None = Field(default=None, ge=0)
+    is_free: bool | None = None
+    is_negotiable: bool | None = None
+    zip_code: str | None = Field(default=None, pattern=r"^\d{5}$")
+    photo_urls: list[str] | None = Field(
+        default=None, min_length=1, max_length=settings.max_photos_per_listing
+    )
+    status: ListingStatus | None = None
+
+    @field_validator("title")
+    @classmethod
+    def strip_title(cls, v: str | None) -> str | None:
+        return None if v is None else " ".join(v.split())
+
+    @field_validator("status")
+    @classmethod
+    def seller_status(cls, v: ListingStatus | None) -> ListingStatus | None:
+        if v is not None and v not in SELLER_STATUSES:
+            raise ValueError("Status must be active, reserved, sold or delisted")
         return v
 
 
@@ -242,6 +343,7 @@ class FacetCounts(BaseModel):
 
     total: int
     categories: list[FacetCount]
+    subcategories: list[FacetCount]
     conditions: list[FacetCount]
     same_zip: int
     same_nationality: int
@@ -250,7 +352,7 @@ class FacetCounts(BaseModel):
 
 
 class EnquiryIn(BaseModel):
-    channel: str  # "email" | "sms"
+    channel: EnquiryChannel
 
 
 class EnquiryOut(BaseModel):
@@ -259,9 +361,12 @@ class EnquiryOut(BaseModel):
     This is the one and only place a contact detail crosses the wire.
     """
 
-    channel: str
+    channel: EnquiryChannel
     address: str | None = None  # email
     phone: str | None = None  # sms
+
+
+# ---------------------------------------------------------------- reference
 
 
 class ZipOut(BaseModel):
@@ -272,20 +377,7 @@ class ZipOut(BaseModel):
     miles_from_campus: float | None
 
 
-class ListingQuery(BaseModel):
-    """Mirrors the query string of GET /listings."""
-
-    q: str | None = None
-    category: list[Category] = []
-    subcategory: list[str] = []
-    condition: list[Condition] = []
-    price_min_cents: int | None = None
-    price_max_cents: int | None = None
-    radius_mi: float | None = None
-    same_zip: bool = False
-    same_nationality: bool = False
-    same_school: bool = False
-    source: list[Source] = []
-    sort: SortOrder = SortOrder.NEWEST
-    limit: int = 24
-    offset: int = 0
+class CountryOut(BaseModel):
+    code: str
+    name: str
+    pinned: bool

@@ -1,22 +1,19 @@
 """Load the generated corpus into the database — UX_SPEC.md §9.
 
-    python -m scripts.seed --reset                    # load data/*.csv
-    python -m scripts.seed --reset --regenerate       # rebuild the CSVs first
-    python -m scripts.seed --reset --users 2000 --listings 3000   # implies --regenerate
+    python -m scripts.seed --reset                              # load data/*.csv
+    python -m scripts.seed --reset --demo-email you@columbia.edu
+    python -m scripts.seed --reset --regenerate                 # rebuild the CSVs first
+    python -m scripts.seed --reset --limit 200                  # a small database, fast
 
-This used to generate its own rows. It no longer does, and that is deliberate:
-there were two generators claiming the same §9, and they had already drifted.
-The ZIP tables disagreed (18 codes here, 47 in the generator), grade and school
-were drawn independently here so undergraduates appeared at CBS, and saves were
-sampled from users who had never viewed the listing, which made every time-based
-analysis over `saves` meaningless.
+The corpus comes from `seed/` at the repository root (Kobe), which owns the
+distributions, the validator and the §7 state fixtures. This file is the
+loader: everything about how the data *looks* belongs in `seed/`, everything
+about how it reaches SQLite or Postgres belongs here. See docs/mock_data_spec.md.
 
-The corpus now comes from `seed/`, at the repository root, which owns the
-distributions, a 16-group validator and the §7 state fixtures. This file is the
-loader. See docs/mock_data_spec.md.
-
-Everything about *how* the data looks belongs in `seed/`. Everything about how it
-reaches Postgres or SQLite belongs here.
+One rule is applied on the way in: **only internal listings are loaded**. The
+generator still emits an external tier (`source != 'internal'`), but the schema
+has no `source` column since 2026-09-02 (docs/DECISIONS.md), so those rows and
+every event that references them are skipped and counted.
 """
 
 from __future__ import annotations
@@ -26,11 +23,10 @@ import csv
 import os
 import subprocess
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import delete
-
-from app.db import SessionLocal, create_all
+from app.db import SessionLocal, create_all, reset_all
+from app.enums import Category, Condition, Grade, ListingStatus, School
 from app.models import (
     Enquiry,
     FilterEvent,
@@ -40,6 +36,7 @@ from app.models import (
     Save,
     User,
 )
+from app.services import domains
 
 # repo root: backend/scripts/seed.py -> ../..
 REPO_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
@@ -110,11 +107,14 @@ def _user(r: dict) -> User:
     )
 
 
+def _is_internal(r: dict) -> bool:
+    return r.get("source", "internal") == "internal" and bool(_text(r["seller_id"]))
+
+
 def _listing(r: dict) -> Listing:
     return Listing(
         id=r["id"],
-        seller_id=_text(r["seller_id"]),
-        source=r["source"],
+        seller_id=r["seller_id"],
         title=r["title"],
         description=_text(r["description"]),
         category=r["category"],
@@ -128,7 +128,6 @@ def _listing(r: dict) -> Listing:
         view_count=_int(r["view_count"]),
         save_count=_int(r["save_count"]),
         enquiry_count=_int(r["enquiry_count"]),
-        external_url=_text(r["external_url"]),
         posted_at=_dt(r["posted_at"]),
         sold_at=_dt(r["sold_at"]),
     )
@@ -150,6 +149,7 @@ def _view(r: dict) -> ListingView:
         listing_id=r["listing_id"],
         viewer_id=_text(r["viewer_id"]),
         surface=r["surface"],
+        badges_shown=True,  # the experiment was not running when this corpus was made
         viewed_at=_dt(r["viewed_at"]),
     )
 
@@ -185,22 +185,20 @@ def _filter_event(r: dict) -> FilterEvent:
 
 
 # Load order is foreign-key order and is not negotiable.
-TABLES = (
-    ("users.csv", _user, User),
-    ("listings.csv", _listing, Listing),
+DEPENDENT_TABLES = (
     ("listing_photos.csv", _photo, ListingPhoto),
     ("listing_views.csv", _view, ListingView),
     ("saves.csv", _save, Save),
     ("enquiries.csv", _enquiry, Enquiry),
-    ("filter_events.csv", _filter_event, FilterEvent),
 )
 
 
-def reset(db) -> None:
-    """Delete in reverse FK order so nothing is orphaned mid-way."""
-    for _name, _build, model in reversed(TABLES):
-        db.execute(delete(model))
+def _insert(db, name: str, rows: list, build, batch: int = 2000) -> None:
+    for start in range(0, len(rows), batch):
+        db.add_all([build(r) for r in rows[start : start + batch]])
+        db.flush()
     db.commit()
+    print("  %-22s %7d rows" % (name, len(rows)))
 
 
 def regenerate(users: int | None, listings: int | None) -> None:
@@ -209,7 +207,9 @@ def regenerate(users: int | None, listings: int | None) -> None:
     A subprocess rather than an import: `seed/` is standard-library only and
     deliberately knows nothing about SQLAlchemy or this virtualenv.
     """
-    cmd = [sys.executable, "-m", "seed.generate"]
+    # The schema has no external tier, so ask the generator for none. It
+    # validates cleanly at --external 0; its own default is Kobe's to change.
+    cmd = [sys.executable, "-m", "seed.generate", "--external", "0"]
     if users is not None:
         cmd += ["--users", str(users)]
     if listings is not None:
@@ -219,29 +219,105 @@ def regenerate(users: int | None, listings: int | None) -> None:
     if result.returncode != 0:
         raise SystemExit(
             "Generation failed. The generator refuses to export when one of its "
-            "16 invariant groups fails, so fix that before loading."
+            "invariant groups fails, so fix that before loading."
         )
 
 
-def load(do_reset: bool, batch: int = 2000) -> None:
-    create_all()
+def load(do_reset: bool, *, limit: int | None = None, demo_email: str | None = None) -> dict[str, int]:
+    """Load data/*.csv. Returns the row counts, for callers that want to check them."""
+    if do_reset:
+        reset_all()  # drop and recreate: the schema has moved since the corpus was made
+    else:
+        create_all()
+
+    counts: dict[str, int] = {}
     db = SessionLocal()
     try:
-        if do_reset:
-            reset(db)
+        users = _read("users.csv")
+        _insert(db, "users.csv", users, _user)
+        counts["users"] = len(users)
 
-        total = 0
-        for name, build, _model in TABLES:
-            rows = _read(name)
-            for start in range(0, len(rows), batch):
-                db.add_all([build(r) for r in rows[start:start + batch]])
-                db.flush()
-            db.commit()
-            print("  %-22s %7d rows" % (name, len(rows)))
-            total += len(rows)
-        print("  %-22s %7d rows" % ("TOTAL", total))
+        all_listings = _read("listings.csv")
+        listings = [r for r in all_listings if _is_internal(r)]
+        skipped = len(all_listings) - len(listings)
+        if limit is not None:
+            listings = listings[:limit]
+        kept = {r["id"] for r in listings}
+        _insert(db, "listings.csv", listings, _listing)
+        counts["listings"] = len(listings)
+        counts["external_skipped"] = skipped
+        if skipped:
+            print("  %-22s %7d rows skipped — external tier, not in the schema (docs/DECISIONS.md)"
+                  % ("", skipped))
+
+        for name, build, _model in DEPENDENT_TABLES:
+            rows = [r for r in _read(name) if r["listing_id"] in kept]
+            _insert(db, name, rows, build)
+            counts[name.split(".")[0]] = len(rows)
+
+        events = _read("filter_events.csv")
+        _insert(db, "filter_events.csv", events, _filter_event)
+        counts["filter_events"] = len(events)
+
+        if demo_email:
+            _add_demo_account(db, demo_email)
     finally:
         db.close()
+    return counts
+
+
+DEMO_ITEMS = (
+    ("IKEA MALM desk 140×65, white", Category.FURNITURE, "desks", Condition.USED_GOOD, 6000),
+    ("Sony WH-1000XM4 headphones", Category.ELECTRONICS, None, Condition.LIKE_NEW, 18000),
+    ("Corporate Finance (Berk) 5th ed.", Category.TEXTBOOKS, None, Condition.USED_GOOD, 3500),
+)
+
+
+def _add_demo_account(db, email: str) -> None:
+    """Your own account, with three fresh listings so My listings is not empty.
+
+    Photos are left off on purpose so the placeholder path stays exercised;
+    post something through the app to see a real upload.
+    """
+    email = domains.normalize(email)
+    reason = domains.rejection_reason(email)
+    if reason:
+        raise SystemExit(reason)
+    if db.query(User).filter(User.email == email).first():
+        print("  demo account %s already exists" % email)
+        return
+    now = datetime.now(timezone.utc)
+    user = User(
+        email=email,
+        username=email.split("@")[0].replace(".", "_")[:20],
+        phone="+16465550142",
+        nationality="IN",
+        school=domains.suggested_school(email) or School.SEAS_GRAD,
+        grade=Grade.GRADUATE,
+        zip_code="10027",
+        is_verified=True,
+        created_at=now - timedelta(days=30),
+    )
+    db.add(user)
+    db.flush()
+    for i, (title, category, sub, condition, price) in enumerate(DEMO_ITEMS):
+        db.add(
+            Listing(
+                seller_id=user.id,
+                title=title,
+                description="Moving out at the end of the month. Pickup on campus, cash or Venmo.",
+                category=category,
+                subcategory=sub,
+                condition=condition,
+                price_cents=price,
+                is_negotiable=True,
+                zip_code="10027",
+                status=ListingStatus.ACTIVE,
+                posted_at=now - timedelta(hours=2 + 20 * i),
+            )
+        )
+    db.commit()
+    print("  demo account %s (@%s) with %d listings" % (email, user.username, len(DEMO_ITEMS)))
 
 
 def warn_about_photos() -> None:
@@ -278,11 +354,12 @@ def warn_about_photos() -> None:
     print()
     print("  The images are not committed: 200MB, and reproducible from the CSV.")
     print("  The app will still run, showing a gradient placeholder on every card,")
-    print("  so this will NOT look like an error. Run this once:")
+    print("  so this will NOT look like an error. Run this once, from the repo root:")
     print()
-    print("      python3 scripts/fetch_photos.py")
+    print("      python3 scripts/fetch_photos.py       # real photos, ~2 min, no key")
+    print("      python3 scripts/make_photos.py        # offline gradients, seconds")
     print()
-    print("  ~2 minutes, no API key needed. See docs/mock_data_spec.md.")
+    print("  See docs/mock_data_spec.md.")
     print("!" * 74)
 
 
@@ -290,23 +367,24 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--reset", action="store_true",
-                        help="empty the tables before loading")
+                        help="drop and recreate every table before loading")
     parser.add_argument("--regenerate", action="store_true",
                         help="rebuild data/*.csv before loading")
-    parser.add_argument("--users", type=int,
-                        help="corpus size; implies --regenerate")
-    parser.add_argument("--listings", type=int,
-                        help="corpus size; implies --regenerate")
+    parser.add_argument("--users", type=int, help="corpus size; implies --regenerate")
+    parser.add_argument("--listings", type=int, help="corpus size; implies --regenerate")
+    parser.add_argument("--limit", type=int, help="load only the first N listings (fast local DB)")
+    parser.add_argument("--demo-email", help="also create an account for this Columbia address")
     args = parser.parse_args()
 
     if args.users is not None or args.listings is not None or args.regenerate:
         regenerate(args.users, args.listings)
 
     print("\nLoading %s" % DATA_DIR)
-    load(args.reset)
+    load(args.reset, limit=args.limit, demo_email=args.demo_email)
     warn_about_photos()
-    print("\nDone. The reference member is @brian_dw — sign in as their address "
-          "to see the screens the way the Figma draws them.")
+    print("\nDone. Sign in with a seeded address (e.g. the reference member @brian_dw"
+          "%s) — the link appears on screen in dev mode."
+          % (", or your demo account" if args.demo_email else ""))
 
 
 if __name__ == "__main__":

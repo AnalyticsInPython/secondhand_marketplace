@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Logo } from "@/components/Logo";
 import { Button, Card, Field, Input, MailIcon, ShieldIcon } from "@/components/ui";
 import { api } from "@/lib/api";
-import { EMAIL_REJECTION, isColumbiaEmail } from "@/lib/domains";
+import { EMAIL_DOMAIN_LIST, EMAIL_REJECTION, isColumbiaEmail } from "@/lib/domains";
 
 /**
  * Sign in — UX_SPEC.md §6.2. There is no password anywhere in this product.
@@ -17,7 +17,9 @@ export default function SignInPage() {
   const [sent, setSent] = useState(false);
   const [alreadyPending, setAlreadyPending] = useState(false);
   const [devLink, setDevLink] = useState<string | null>(null);
+  const [deliveryError, setDeliveryError] = useState<string | null>(null);
   const [wait, setWait] = useState(0);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const valid = isColumbiaEmail(email);
@@ -32,21 +34,21 @@ export default function SignInPage() {
 
   async function send() {
     setError(null);
+    setBusy(true);
     try {
-      const res = await api.requestLink(email);
-      // `sent: false` is NOT a failure. It means a link was issued moments ago
-      // and the 60-second resend lock (§6.2, state B6) has not expired — the
-      // outstanding link is still valid. Treating it as failure left the button
-      // looking dead: you clicked, nothing rendered, and the only way to tell a
-      // link had been sent was to read the network tab.
+      const res = await api.requestLink(email.trim());
+      // `sent: false` is not a failure: a link was issued moments ago and the
+      // 60-second resend lock (state B6) has not expired. The outstanding link
+      // is still valid, so keep any dev link we already have.
       setSent(true);
-      setAlreadyPending(!res.sent);
-      // Keep any link we already have: a locked resend returns none, but the
-      // one from a moment ago still works.
+      setDeliveryError(res.delivery_error);
+      setAlreadyPending(!res.sent && !res.delivery_error);
       if (res.dev_link) setDevLink(res.dev_link);
       setWait(res.resend_available_in_seconds);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -66,15 +68,12 @@ export default function SignInPage() {
             </p>
           </div>
 
-          <Field
-            label="Columbia email"
-            error={email && !valid ? EMAIL_REJECTION : undefined}
-          >
+          <Field label="Columbia email" error={email && !valid ? EMAIL_REJECTION : undefined}>
             <Input
               value={email}
               onChange={setEmail}
               type="email"
-              placeholder="you@columbia.edu"
+              placeholder="uni1234@columbia.edu"
               state={!email ? "default" : valid ? "ok" : "error"}
               left={<MailIcon className="h-[17px] w-[17px] text-deep" />}
               right={valid ? <ShieldIcon className="h-4 w-4 text-ok" /> : undefined}
@@ -89,24 +88,49 @@ export default function SignInPage() {
               <p className="text-[12.5px] leading-[19px] text-ink2">
                 {alreadyPending
                   ? "We sent one moments ago — use that one. It works once and expires in 15 minutes."
-                  : "The link works once and expires in 15 minutes."}
-              </p>
-              {devLink && (
-                <a href={devLink} className="break-all text-[12px] font-semibold text-deep">
-                  {devLink}
+                  : "The link works once and expires in 15 minutes."}{" "}
+                Nothing arriving? Check Spam, and
+                if you have never signed up, the address has no account yet —{" "}
+                <a href="/signup" className="font-semibold text-deep">
+                  create one
                 </a>
+                .
+              </p>
+              {deliveryError && (
+                <p className="rounded-[10px] border border-danger/30 bg-danger/5 p-3 text-[12px] leading-[17px] text-danger">
+                  The email could not be sent: {deliveryError} Check the mail settings in backend/.env.
+                  The development link below still works.
+                </p>
               )}
-              <Button variant="ghost" disabled={wait > 0} onClick={send}>
+              {devLink && (
+                <div className="flex flex-col gap-1 rounded-[10px] border border-dashed border-light bg-surface p-3">
+                  <p className="text-[10.5px] font-semibold tracking-[0.06em] text-ink3">
+                    DEVELOPMENT MODE · THE LINK WE WOULD HAVE EMAILED
+                  </p>
+                  <a href={devLink} className="break-all text-[12.5px] font-semibold text-deep">
+                    Open the sign-in link
+                  </a>
+                </div>
+              )}
+              <Button variant="ghost" disabled={wait > 0 || busy} onClick={send}>
                 {wait > 0 ? `Resend available in 0:${String(wait).padStart(2, "0")}` : "Resend the link"}
               </Button>
             </div>
           ) : (
-            <Button full disabled={!valid} onClick={send}>
-              Email me a sign-in link
+            <Button full disabled={!valid || busy} onClick={send}>
+              {busy ? "Sending…" : "Email me a sign-in link"}
             </Button>
           )}
 
           {error && <p className="text-[13px] text-danger">{error}</p>}
+
+          <div className="flex items-start gap-2.5 rounded-[12px] bg-muted p-4 text-[12.5px] leading-[18px] text-ink2">
+            <ShieldIcon className="mt-0.5 h-4 w-4 shrink-0 text-ink3" />
+            <span>
+              The link works once and expires after 15 minutes. Only Columbia addresses are accepted:{" "}
+              {EMAIL_DOMAIN_LIST}.
+            </span>
+          </div>
 
           <p className="text-center text-[14px] text-ink2">
             New to Columbia Market?{" "}

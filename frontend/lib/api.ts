@@ -6,12 +6,18 @@
  */
 
 import type {
+  Country,
+  EmailCheck,
   EnquiryRow,
+  EnumsRef,
   FacetCounts,
   FeedFilters,
   ListingDetail,
+  ListingInput,
   ListingPage,
+  ListingStatus,
   Me,
+  Photo,
   ZipResult,
 } from "./types";
 
@@ -29,18 +35,10 @@ export class ApiError extends Error {
 /**
  * Turn a FastAPI error body into something a person can read.
  *
- * FastAPI sends two different shapes under `detail`, and only one is a string.
- * A raised HTTPException gives `detail: "That username is taken"`, but a
- * Pydantic validation failure gives an *array* of objects:
- *
- *     [{ type: "value_error", loc: ["body","email"], msg: "Value error, ..." }]
- *
- * Passing that array straight to `new Error()` stringifies it to
- * "[object Object]", so the sign-up form showed exactly that instead of the
- * message naming the four admitted Columbia domains. Same family of bug as the
- * sign-in one: a failure path that renders nothing useful.
+ * A raised HTTPException gives `detail` as a string, but a Pydantic validation
+ * failure gives an array of objects, which stringified to "[object Object]".
  */
-function errorMessage(body: unknown, fallback: string): string {
+function detailMessage(body: unknown, fallback: string): string {
   const detail = (body as { detail?: unknown })?.detail;
   if (typeof detail === "string") return detail;
   if (Array.isArray(detail)) {
@@ -55,15 +53,19 @@ function errorMessage(body: unknown, fallback: string): string {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const isForm = init.body instanceof FormData;
   const res = await fetch(`${BASE}${path}`, {
     credentials: "include",
-    headers: { "Content-Type": "application/json", ...(init.headers ?? {}) },
     ...init,
+    headers: {
+      ...(isForm ? {} : { "Content-Type": "application/json" }),
+      ...(init.headers ?? {}),
+    },
   });
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, errorMessage(body, res.statusText));
+    throw new ApiError(res.status, detailMessage(body, res.statusText));
   }
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
 }
@@ -81,14 +83,22 @@ function qs(filters: FeedFilters): string {
 
 export const api = {
   // ---- auth
+  emailCheck: (email: string) =>
+    request<EmailCheck>(`/auth/email-check?email=${encodeURIComponent(email)}`),
+
   signup: (body: Record<string, unknown>) =>
-    request<{ sent: boolean; dev_link: string | null }>("/auth/signup", {
+    request<{ sent: boolean; dev_link: string | null; delivery_error: string | null }>("/auth/signup", {
       method: "POST",
       body: JSON.stringify(body),
     }),
 
   requestLink: (email: string) =>
-    request<{ sent: boolean; resend_available_in_seconds: number; dev_link: string | null }>(
+    request<{
+      sent: boolean;
+      resend_available_in_seconds: number;
+      dev_link: string | null;
+      delivery_error: string | null;
+    }>(
       "/auth/request-link",
       { method: "POST", body: JSON.stringify({ email }) },
     ),
@@ -107,6 +117,7 @@ export const api = {
   me: () => request<Me>("/me"),
   updateMe: (body: Partial<Me>) =>
     request<Me>("/me", { method: "PATCH", body: JSON.stringify(body) }),
+  deactivate: () => request<void>("/me/deactivate", { method: "POST" }),
 
   // ---- the avatar menu's three collections
   myListings: (offset = 0) => request<ListingPage>(`/me/listings?offset=${offset}`),
@@ -117,11 +128,23 @@ export const api = {
   listings: (filters: FeedFilters) => request<ListingPage>(`/listings${qs(filters)}`),
   facets: (filters: FeedFilters) => request<FacetCounts>(`/listings/facets${qs(filters)}`),
   listing: (id: string) => request<ListingDetail>(`/listings/${id}`),
-  createListing: (body: Record<string, unknown>) =>
+  createListing: (body: ListingInput) =>
     request<ListingDetail>("/listings", { method: "POST", body: JSON.stringify(body) }),
+  updateListing: (id: string, body: Partial<ListingInput> & { status?: ListingStatus }) =>
+    request<ListingDetail>(`/listings/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   markSold: (id: string) => request<void>(`/listings/${id}/sold`, { method: "POST" }),
   save: (id: string) => request<void>(`/listings/${id}/save`, { method: "POST" }),
   unsave: (id: string) => request<void>(`/listings/${id}/save`, { method: "DELETE" }),
+
+  /**
+   * The browser never writes to storage directly: the API resizes, re-encodes
+   * and strips metadata before anything is kept (UX_SPEC.md §4.3).
+   */
+  uploadPhoto: (file: File) => {
+    const form = new FormData();
+    form.append("file", file, file.name);
+    return request<Photo>("/photos", { method: "POST", body: form });
+  },
 
   /**
    * The only call that returns a contact detail, and only because the buyer
@@ -129,10 +152,10 @@ export const api = {
    * number (UX_SPEC.md §5.1).
    */
   enquire: (id: string, channel: "email" | "sms") =>
-    request<{ channel: string; address?: string; phone?: string }>(`/listings/${id}/enquiry`, {
-      method: "POST",
-      body: JSON.stringify({ channel }),
-    }),
+    request<{ channel: string; address?: string | null; phone?: string | null }>(
+      `/listings/${id}/enquiry`,
+      { method: "POST", body: JSON.stringify({ channel }) },
+    ),
 
   /**
    * Fire on every toggle and every slider release. This is the table that
@@ -148,5 +171,6 @@ export const api = {
 
   // ---- reference
   zips: (q: string) => request<ZipResult[]>(`/zips?q=${encodeURIComponent(q)}`),
-  enums: () => request<Record<string, unknown>>("/reference/enums"),
+  enums: () => request<EnumsRef>("/reference/enums"),
+  countries: () => request<Country[]>("/reference/countries"),
 };

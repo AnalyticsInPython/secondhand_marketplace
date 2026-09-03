@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { CollectionPage } from "@/components/CollectionPage";
@@ -20,18 +21,19 @@ import type { EnquiryRow, Me } from "@/lib/types";
  * item. The item is the subject line.
  */
 export default function InboxPage() {
+  const router = useRouter();
   const [me, setMe] = useState<Me | null>(null);
   const [rows, setRows] = useState<EnquiryRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.me().then(setMe).catch(() => setMe(null));
+    api.me().then(setMe).catch(() => router.replace("/signin"));
     api
       .myEnquiries()
       .then(setRows)
       .catch(() => setRows([]))
       .finally(() => setLoading(false));
-  }, []);
+  }, [router]);
 
   return (
     <CollectionPage

@@ -1,12 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { MobileTabBar, TopNav } from "@/components/TopNav";
-import { Button, Card, Field, Input, PinIcon, SectionLabel, Toggle } from "@/components/ui";
+import { Button, Card, Field, Input, PinIcon, SectionLabel, Segmented, Select, Toggle } from "@/components/ui";
 import { api } from "@/lib/api";
-import type { Me } from "@/lib/types";
+import type { Country, EnumsRef, Grade, Me } from "@/lib/types";
 
 /**
  * Profile & account — UX_SPEC.md §6.6.
@@ -20,9 +21,14 @@ export default function ProfilePage() {
   const [me, setMe] = useState<Me | null>(null);
   const [draft, setDraft] = useState<Partial<Me>>({});
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [countries, setCountries] = useState<Country[]>([]);
+  const [enums, setEnums] = useState<EnumsRef | null>(null);
 
   useEffect(() => {
-    api.me().then(setMe).catch(() => router.push("/signin"));
+    api.me().then(setMe).catch(() => router.replace("/signin"));
+    api.countries().then(setCountries).catch(() => setCountries([]));
+    api.enums().then(setEnums).catch(() => setEnums(null));
   }, [router]);
 
   if (!me) return <div className="p-10 text-ink2">Loading…</div>;
@@ -32,15 +38,31 @@ export default function ProfilePage() {
 
   async function save() {
     setSaving(true);
+    setError(null);
     try {
       setMe(await api.updateMe(draft));
       setDraft({});
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not save");
     } finally {
       setSaving(false);
     }
   }
 
+  async function signOut() {
+    await api.signout().catch(() => {});
+    router.replace("/signin");
+  }
+
+  async function deactivate() {
+    if (!window.confirm("Deactivate your account? Your listings leave the feed. Signing in again brings everything back.")) return;
+    await api.deactivate();
+    router.replace("/signin");
+  }
+
   const hasPhone = Boolean(value("phone"));
+  const pinned = countries.filter((c) => c.pinned);
+  const rest = countries.filter((c) => !c.pinned);
 
   return (
     <>
@@ -58,6 +80,18 @@ export default function ProfilePage() {
         {/* Identity */}
         <Card className="flex flex-col gap-5 p-6 md:p-7">
           <SectionLabel>IDENTITY</SectionLabel>
+          <div className="flex items-center gap-3.5">
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-light text-[17px] font-bold text-deep">
+              {me.username.slice(0, 2).toUpperCase()}
+            </span>
+            <div>
+              <p className="text-[16px] font-bold">@{me.username}</p>
+              <p className="text-[12.5px] text-ink2">
+                {me.is_verified ? "Verified" : "Unverified"} · member since{" "}
+                {new Date(me.created_at).toLocaleDateString("en-US", { month: "short", year: "numeric" })}
+              </p>
+            </div>
+          </div>
           <Field
             label="Columbia email"
             locked
@@ -80,21 +114,56 @@ export default function ProfilePage() {
           <SectionLabel>MATCHING ATTRIBUTES</SectionLabel>
           <div className="grid gap-5 md:grid-cols-2">
             <Field label="Nationality">
-              <Input
-                value={value("nationality")}
-                onChange={(v) => setDraft({ ...draft, nationality: v.toUpperCase() })}
-              />
+              <Select value={value("nationality")} onChange={(v) => setDraft({ ...draft, nationality: v })}>
+                <optgroup label="Most common at Columbia">
+                  {pinned.map((c) => (
+                    <option key={c.code} value={c.code}>
+                      {c.name}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="All countries">
+                  {rest.map((c) => (
+                    <option key={c.code} value={c.code}>
+                      {c.name}
+                    </option>
+                  ))}
+                </optgroup>
+              </Select>
             </Field>
             <Field label="College / School">
-              <Input value={value("school")} onChange={(v) => setDraft({ ...draft, school: v })} />
+              <Select value={value("school")} onChange={(v) => setDraft({ ...draft, school: v })}>
+                <optgroup label="Undergraduate">
+                  {enums?.schools.undergraduate.map((s) => (
+                    <option key={s.value} value={s.value}>
+                      {s.label}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Graduate & professional">
+                  {enums?.schools.graduate.map((s) => (
+                    <option key={s.value} value={s.value}>
+                      {s.label}
+                    </option>
+                  ))}
+                </optgroup>
+              </Select>
             </Field>
             <Field label="Grade">
-              <Input value={value("grade")} onChange={(v) => setDraft({ ...draft, grade: v as Me["grade"] })} />
+              <Segmented<Grade>
+                value={value("grade")}
+                onChange={(g) => setDraft({ ...draft, grade: g })}
+                options={[
+                  { value: "undergraduate", label: "Undergraduate" },
+                  { value: "graduate", label: "Graduate" },
+                  { value: "faculty_staff", label: "Faculty / Staff" },
+                ]}
+              />
             </Field>
-            <Field label="ZIP code" hint="Changing this re-centres your feed.">
+            <Field label="ZIP code" hint="Changing this re-centres your feed. NYC metro only.">
               <Input
                 value={value("zip_code")}
-                onChange={(v) => setDraft({ ...draft, zip_code: v })}
+                onChange={(v) => setDraft({ ...draft, zip_code: v.replace(/\D/g, "").slice(0, 5) })}
                 left={<PinIcon className="h-[17px] w-[17px] text-ink3" />}
               />
             </Field>
@@ -127,6 +196,7 @@ export default function ProfilePage() {
               value={value("phone") ?? ""}
               onChange={(v) => setDraft({ ...draft, phone: v })}
               placeholder="+1 (646) 555-0142"
+              type="tel"
             />
           </Field>
 
@@ -180,9 +250,10 @@ export default function ProfilePage() {
         <Card className="flex items-center gap-3 p-5">
           <div className="flex-1">
             <p className="text-[13.5px] font-semibold">
-              {changed.length === 0 ? "No unsaved changes" : `${changed.length} unsaved changes`}
+              {changed.length === 0 ? "No unsaved changes" : `${changed.length} unsaved ${changed.length === 1 ? "change" : "changes"}`}
             </p>
             {changed.length > 0 && <p className="text-[12px] text-ink2">{changed.join(" · ")}</p>}
+            {error && <p className="text-[12px] text-danger">{error}</p>}
           </div>
           <Button variant="ghost" onClick={() => setDraft({})} disabled={changed.length === 0}>
             Discard
@@ -190,6 +261,45 @@ export default function ProfilePage() {
           <Button onClick={save} disabled={changed.length === 0 || saving}>
             {saving ? "Saving…" : "Save changes"}
           </Button>
+        </Card>
+
+        {/* Collections */}
+        <Card className="flex flex-col gap-4 p-6 md:p-7">
+          <SectionLabel>YOUR COLLECTIONS</SectionLabel>
+          <div className="grid gap-3 md:grid-cols-3">
+            {(
+              [
+                ["/my-listings", "My listings", "Everything you have posted, in every status."],
+                ["/saved", "Saved items", "Every listing you tapped the heart on."],
+                ["/inbox", "Inbox", "Every seller you have contacted."],
+              ] as const
+            ).map(([href, label, blurb]) => (
+              <Link
+                key={href}
+                href={href}
+                className="flex flex-col gap-1 rounded-[12px] border border-line p-4 transition-colors hover:bg-muted"
+              >
+                <span className="text-[14.5px] font-semibold text-ink">{label}</span>
+                <span className="text-[12.5px] leading-[18px] text-ink2">{blurb}</span>
+              </Link>
+            ))}
+          </div>
+        </Card>
+
+        {/* Leaving */}
+        <Card className="flex flex-col gap-4 p-6 md:p-7">
+          <SectionLabel>LEAVING</SectionLabel>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button variant="ghost" onClick={signOut}>
+              Sign out
+            </Button>
+            <Button variant="danger" onClick={deactivate}>
+              Deactivate account
+            </Button>
+            <p className="text-[12px] text-ink3">
+              Deactivating is reversible — signing in with the same Columbia email brings it back.
+            </p>
+          </div>
         </Card>
       </main>
 
