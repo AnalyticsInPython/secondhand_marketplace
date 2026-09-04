@@ -150,8 +150,17 @@ def _overview() -> dict:
           (select count(*) from listing_views)                            as views,
           (select count(*) from saves)                                    as saves,
           (select count(*) from enquiries)                                as enquiries,
-          (select count(distinct session_id) from listing_views
-             where session_id is not null)                                as sessions,
+          -- A visit is a session, whatever happened in it. Counting only the
+          -- sessions that contain a view misses the 558 where someone searched,
+          -- filtered, saved or made contact without a view landing in the same
+          -- session, so every stream has to be in the union.
+          (select count(*) from (
+             select session_id from listing_views where session_id is not null
+             union select session_id from saves         where session_id is not null
+             union select session_id from enquiries     where session_id is not null
+             union select session_id from search_events where session_id is not null
+             union select session_id from filter_events where session_id is not null
+           ))                                                             as sessions,
           (select count(*) from search_events)                            as searches
     """)
     row = df.iloc[0]
