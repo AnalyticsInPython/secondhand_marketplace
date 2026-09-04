@@ -341,14 +341,13 @@ def _categories() -> list[dict]:
 # calls a first view with three results "how you lose a user permanently"; ten
 # is a generous reading of the same idea.
 USABLE_THRESHOLD = 10
-TRUST_SAMPLE = 300
 
 
 def _trust_curve() -> dict:
     """Every filter buys trust and costs inventory — this is that curve.
 
-    For a sample of members, count how many live listings survive at each depth
-    of trust filtering. Two readings come out of it:
+    For every member, count how many live listings survive at each depth of
+    trust filtering. Two readings come out of it:
 
     * the **median** member's feed size at each depth — what a typical person
       actually sees, which the mean would flatter because a few people in 10027
@@ -357,9 +356,14 @@ def _trust_curve() -> dict:
       proposal's real question: not "does filtering cost inventory" (obviously)
       but "how tight can a circle get before it stops working".
 
-    Computed vectorised over a small frame rather than by running the feed query
-    per member per combination — 1,350 live listings against 300 members is a
-    few hundred boolean operations, where the query version is 2,400 round trips.
+    This ran on a fixed sample of 300 members until 2026-09-04. The sample was a
+    guard against running the feed query once per member per combination, which
+    the vectorised form below does not do: every member costs three boolean
+    masks over one small frame, and the whole panel is ~130ms against ~50ms for
+    the sample. The saving was not worth it. The draw was also visibly biased —
+    the same-school median read 113 sampled against 136 for the full population —
+    and it left a marketplace-wide statistic able to move when one sampled member
+    edited their own ZIP.
     """
     listings = _frame("""
         select l.zip_code as listing_zip,
@@ -373,7 +377,6 @@ def _trust_curve() -> dict:
     if listings.empty or members.empty:
         return {"steps": [], "sample": 0, "total": 0, "threshold": USABLE_THRESHOLD}
 
-    sample = members.sample(min(TRUST_SAMPLE, len(members)), random_state=0)
     total = len(listings)
 
     combos = [
@@ -388,7 +391,7 @@ def _trust_curve() -> dict:
     ]
 
     counts: dict[str, list[int]] = {label: [] for label, _ in combos}
-    for member in sample.itertuples():
+    for member in members.itertuples():
         masks = {
             "zip": listings["seller_zip"] == member.zip_code,
             "nat": listings["seller_nationality"] == member.nationality,
@@ -419,7 +422,7 @@ def _trust_curve() -> dict:
 
     return {
         "steps": steps,
-        "sample": len(sample),
+        "sample": len(members),
         "total": total,
         "threshold": USABLE_THRESHOLD,
     }
