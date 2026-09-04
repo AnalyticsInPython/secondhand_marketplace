@@ -1,0 +1,69 @@
+<meta charset="utf-8">
+<div class="head">
+  <h1>Lowlights</h1>
+  <p class="sub">Five things that went wrong while building LionsList with an agent — and how I caught them.</p>
+  <p class="by">Vinayak Raju &nbsp;·&nbsp; LionsList / Columbia Market &nbsp;·&nbsp; September 2026</p>
+</div>
+
+<p class="lede">The agent almost never failed loudly. It failed <em>plausibly</em> — confident prose, clean code, a number wrong only in the sentence around it. None of the items below announced itself as an error. Each came out of checking something I had no reason to doubt.</p>
+
+<div class="item">
+  <h2>1. I mistook a long spec for a clear one</h2>
+  <p><b>Noticed:</b> early builds kept drifting from what the team had agreed. The agent wasn't ignoring the spec — it was
+  sampling different parts of it each time.</p>
+  <p><b>Went wrong:</b> our proposal ran to 51 pages. That is not more context, it is more surface area. The load-bearing
+  parts — data model, the four allowed email domains, the feed query — sat buried among material that constrained nothing.</p>
+  <p><b>Did:</b> cut it to the decisions that actually bind the build, and moved those constraints into the prompt itself
+  instead of trusting the agent to go find them.</p>
+</div>
+
+<div class="item">
+  <h2>2. It picked the architecture for me, silently</h2>
+  <p><b>Noticed:</b> reading the generated scope, the API was TypeScript and Drizzle. I had never asked for that — but I had
+  never asked for Python either.</p>
+  <p><b>Went wrong:</b> I left the stack as an open question, so the agent closed it with its own default and moved on. By the
+  time I looked, Codex had already scaffolded a working Next.js MVP down the wrong road.</p>
+  <p><b>Did:</b> pushed back directly — <i>"why does it reject python, can't we use a python backend?"</i> — had the spec
+  rewritten around a Python API and Python analytics, and rebuilt on FastAPI. Any decision I don't make, the agent makes for me — and never flags that it did.</p>
+</div>
+
+<div class="item">
+  <h2>3. Every number on the dashboard was right; the sentence above them was wrong</h2>
+  <p><b>Noticed:</b> I didn't trust the headline tiles, so I re-ran the same aggregation straight against SQLite. I got 29
+  listed and 8 sold; the page claimed 53 and 21.</p>
+  <p><b>Went wrong:</b> pandas <code>resample("W")</code> labels each bucket by the week's <i>end</i> date. The figures were
+  correct — for 24–30 August. The page called it "the week beginning 2026-08-30". No test fails and no error is raised: the analysis is sound and the label lies.</p>
+  <p><b>Did:</b> traced it to the resample rule in the insights router and fixed the label rather than the buckets, since the
+  same off-by-one was on the chart axis and tooltips too.</p>
+</div>
+
+<div class="item">
+  <h2>4. Search fails on the one word the product teaches you</h2>
+  <p><b>Noticed:</b> I typed "textbook" into my own feed and got nothing back — while a <b>Textbooks</b> filter chip sat on
+  the same screen.</p>
+  <p><b>Went wrong:</b> the query matches title and description, never category. 273 listings sit in that category and not one contains the word. The event log settles it: "textbook" is the most common zero-result search (82 times), and 33% of all searches return nothing.</p>
+  <p><b>Did:</b> diagnosed it, and deliberately did <i>not</i> patch it yet. That 33% is reported in our analytics as a
+  measured finding, so fixing search moves a number we present as evidence. It needs a before-and-after, not a silent fix.</p>
+</div>
+
+<div class="item">
+  <h2>5. The agent's account of my own work was wrong</h2>
+  <p><b>Noticed:</b> compiling my transcripts for submission, I read the rendered output instead of trusting it. A "prompt"
+  attributed to me opened <i>"Approach this as the design lead at a small studio…"</i>. I never wrote that sentence.</p>
+  <p><b>Went wrong:</b> instructions the harness injects arrive in the transcript as user turns. The export counted them as
+  mine — five of them.</p>
+  <p><b>Did:</b> filtered on the flag that marks injected content and rebuilt; my prompt count fell from 55 to 50. On a graded
+  artifact, that gap is the difference between an accurate record and a flattering one.</p>
+</div>
+
+<div class="close">
+  <h2>What I changed in how I work</h2>
+  <p><b>Model selection is a budget decision, not a quality one.</b> Multi-agent fan-out and the heaviest models are real
+  capability, but a CRUD marketplace with a settled spec does not need them. Opus did this job; reaching further mostly
+  bought tokens.</p>
+  <p><b>Sequential sessions over parallel agents.</b> Separate focused sessions kept context small enough to stay accurate and made spend legible; fanning out agents burned budget on work I then had to re-read anyway.</p>
+  <p><b>Walk the whole user cycle by hand.</b> Items 3–5 were found by using the thing, not reading its code — and a sixth (sign-in "bad credentials" that was an <i>empty</i> password field, not a wrong one) came from reading the mailer instead of believing the error. The agent's first diagnosis is a hypothesis.</p>
+  <p class="kicker">The through-line: agents are strong once the plan and architecture are genuinely settled, and quietly
+  inventive before that. My job was not writing the code. It was noticing the places where something plausible had been
+  substituted for something true.</p>
+</div>
