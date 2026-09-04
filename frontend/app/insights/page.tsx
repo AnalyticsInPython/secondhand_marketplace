@@ -18,8 +18,6 @@ import type { Insights, Me, TopLine, TopLinePeriod } from "@/lib/types";
  *
  * On reading these figures: several of the effects visible here were planted in
  * the seed data, and which ones is listed in docs/data_visualization_spec.md §6.
- * The badge panel says so on the page itself, because that is the one a reader
- * is most likely to mistake for a finding.
  */
 export default function InsightsPage() {
   const [me, setMe] = useState<Me | null>(null);
@@ -118,18 +116,6 @@ export default function InsightsPage() {
                 <BuyerVsViewer data={data} />
               </div>
             </Claim>
-
-            <div className="mt-4 flex flex-col gap-2 border-t border-line pt-6">
-              <h2 className="text-[20px] font-bold tracking-[-0.02em]">
-                The one thing we tested
-              </h2>
-              <p className="max-w-[70ch] text-[13.5px] leading-[21px] text-ink2">
-                Everything above is an observation. This is an experiment: match badges
-                are shown on a random half of impressions, so the two groups differ only
-                in whether the badge was visible.
-              </p>
-            </div>
-            <Badges data={data} />
           </div>
         )}
       </main>
@@ -926,39 +912,6 @@ function Categories({ data }: { data: Insights }) {
           </tbody>
         </table>
       </div>
-    </Panel>
-  );
-}
-
-function Badges({ data }: { data: Insights }) {
-  return (
-    <Panel
-      title="Match badges: shown against hidden"
-      hint="Half of all impressions show match badges; the other half do not. This compares how often each arm led to contacting the seller."
-    >
-      <div className="grid gap-4 md:grid-cols-2">
-        {data.badges.arms.map((arm) => (
-          <div key={arm.arm} className="rounded-[12px] border border-line p-4">
-            <p className="text-[12px] font-semibold uppercase tracking-[0.07em] text-ink2">
-              {arm.arm}
-            </p>
-            <p className="mt-1 text-[26px] font-bold tabular-nums text-deep">{arm.rate}%</p>
-            <p className="text-[12px] text-ink2">
-              {arm.contacts.toLocaleString()} contacts from{" "}
-              {arm.impressions.toLocaleString()} impressions
-            </p>
-          </div>
-        ))}
-      </div>
-      {data.badges.planted && (
-        <p className="rounded-[10px] bg-muted px-4 py-3 text-[12.5px] leading-[19px] text-ink2">
-          <span className="font-semibold text-ink">Read this before quoting it.</span> The
-          seed data was generated with a badge effect deliberately built in, so this
-          difference is the pipeline recovering a number that was put there — not
-          evidence about real behaviour. Every planted effect is listed in{" "}
-          <code className="rounded bg-surface px-1">docs/data_visualization_spec.md</code> §6.
-        </p>
-      )}
     </Panel>
   );
 }
