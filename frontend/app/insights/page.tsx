@@ -109,12 +109,9 @@ export default function InsightsPage() {
 
             <Claim
               heading="Having something in common makes people reach out"
-              assumption="This is the whole bet: that shared affiliation does the job ratings and escrow do elsewhere. If it holds, people should contact sellers they overlap with more often — and the ones who overlap most should be the ones who end up buying."
+              assumption="This is the whole bet: that shared affiliation does the job ratings and escrow do elsewhere. If it holds, people should contact sellers they overlap with more often."
             >
-              <div className="grid gap-6 lg:grid-cols-2">
-                <Overlap data={data} />
-                <BuyerVsViewer data={data} />
-              </div>
+              <Overlap data={data} />
             </Claim>
           </div>
         )}
@@ -575,70 +572,6 @@ function TrustCurve({ data }: { data: Insights }) {
         fall below {t.threshold} items. With all three on, the median member sees{" "}
         {tightest?.median} and {tightest?.below_threshold}% have almost nothing. That is
         the trust-versus-selection trade-off, and it is why the filters default to off.
-      </p>
-    </Panel>
-  );
-}
-
-/**
- * The sharper test: among everyone who saw the same listing, did the buyer share
- * more with the seller than the people who did not buy?
- *
- * Holding the listing constant is the point. "Buyers share a lot with sellers"
- * is not evidence — people near a seller see more of their listings to begin
- * with. Comparing within the same choice set cancels that out.
- */
-function BuyerVsViewer({ data }: { data: Insights }) {
-  const b = data.buyer_vs_viewer;
-  const rows = b.by_attribute;
-  const max = Math.max(1, ...rows.flatMap((r) => [r.buyers, r.viewers]));
-  const meaningful = (b.lift ?? 0) >= 10;
-
-  return (
-    <Panel
-      title="Did the buyer have more in common than the people who just looked?"
-      hint={`Across ${b.listings} sold listings, comparing the buyer against everyone else who viewed the same item — so exposure is held constant.`}
-    >
-      <div className="flex flex-col gap-3.5">
-        {rows.map((r) => (
-          <div key={r.attribute} className="flex flex-col gap-1">
-            <span className="text-[12.5px] font-medium">{r.attribute}</span>
-            <div className="flex items-center gap-2">
-              <span className="w-[52px] shrink-0 text-[11px] text-ink2">Buyer</span>
-              <div className="h-3.5 flex-1 overflow-hidden rounded-[4px] bg-muted">
-                <div className="h-full rounded-[4px] bg-deep"
-                     style={{ width: `${(r.buyers / max) * 100}%` }} />
-              </div>
-              <span className="w-11 shrink-0 text-right text-[11.5px] font-semibold tabular-nums">
-                {r.buyers}%
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-[52px] shrink-0 text-[11px] text-ink2">Viewers</span>
-              <div className="h-3.5 flex-1 overflow-hidden rounded-[4px] bg-muted">
-                <div className="h-full rounded-[4px] bg-line-strong"
-                     style={{ width: `${(r.viewers / max) * 100}%` }} />
-              </div>
-              <span className="w-11 shrink-0 text-right text-[11.5px] tabular-nums text-ink2">
-                {r.viewers}%
-              </span>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <p className="rounded-[10px] bg-muted px-4 py-3 text-[12.5px] leading-[19px] text-ink2">
-        <span className="font-semibold text-ink">
-          {meaningful
-            ? "Buyers do have more in common than the people who only looked."
-            : "Barely any difference."}
-        </span>{" "}
-        {meaningful
-          ? `Buyers shared ${b.buyer_mean} of the three attributes against ${b.viewer_mean} for other viewers.`
-          : `Buyers shared ${b.buyer_mean} of the three attributes; everyone else who looked shared ${b.viewer_mean}. Same school is identical, and buyers were slightly less likely to share a country.`}{" "}
-        Read alongside the panel to the left, the story is that having something in
-        common makes people <em>reach out</em> — but among people considering the same
-        item, it does not decide who goes through with it.
       </p>
     </Panel>
   );
